@@ -153,3 +153,55 @@ class Gr00tN15PipelineAdapter(Gr00tPipelineAdapter):
 
     def parse_action(self, action: np.ndarray) -> np.ndarray:
         return np.asarray(action[:7], dtype=np.float32).copy()
+
+
+class TurboVlaLiberoAdapter(BasePipelineAdapter):
+    """Exact TurboVLA LIBERO camera/state/action preprocessing."""
+
+    STATE_MEAN = np.asarray([
+        -0.04651878296410724, 0.034409066171901814, 0.7645525131792095,
+        2.9722095290211694, -0.2204697871882314, -0.12557940371042364,
+        0.026914252831829258, -0.02719078368876073,
+    ], dtype=np.float32)
+    STATE_STD = np.asarray([
+        0.10494395469120875, 0.15176619455037307, 0.37851671516755075,
+        0.3442734256931591, 0.9069468528665473, 0.32539190239881105,
+        0.014175903729549695, 0.014058894243853325,
+    ], dtype=np.float32)
+    ACTION_MIN = np.asarray([
+        -0.9375, -0.9375, -0.9375, -0.2582142949104309,
+        -0.375, -0.3675000071525574, -1.0,
+    ], dtype=np.float32)
+    ACTION_MAX = np.asarray([
+        0.9375, 0.9375, 0.9375, 0.3557142913341522,
+        0.375, 0.375, 1.0,
+    ], dtype=np.float32)
+
+    def parse_observation(self, obs: dict[str, Any]) -> dict[str, Any]:
+        def image_chw(name: str) -> np.ndarray:
+            image = np.ascontiguousarray(obs["pixels"][name][::-1, ::-1])
+            return np.transpose(image.astype(np.float32) / 255.0, (2, 0, 1))
+
+        quat = np.asarray(obs["robot_state"]["eef"]["quat"],
+                          dtype=np.float64).copy()
+        state = np.concatenate((
+            np.asarray(obs["robot_state"]["eef"]["pos"], dtype=np.float32),
+            Evo1PipelineAdapter.quat2axisangle(quat).astype(np.float32),
+            np.asarray(obs["robot_state"]["gripper"]["qpos"], dtype=np.float32),
+        )).astype(np.float32)
+        state = (state - self.STATE_MEAN) / (self.STATE_STD + 1e-6)
+        return {
+            "observation.images.image": image_chw("image"),
+            "observation.images.image2": image_chw("image2"),
+            "observation.state": state.astype(np.float32),
+            "task": obs.get("task_description", ""),
+        }
+
+    def parse_action(self, action: np.ndarray) -> np.ndarray:
+        normalized = np.asarray(action[:7], dtype=np.float32)
+        result = np.empty(7, dtype=np.float32)
+        result[:6] = (0.5 * (normalized[:6] + 1.0)
+                      * (self.ACTION_MAX[:6] - self.ACTION_MIN[:6])
+                      + self.ACTION_MIN[:6])
+        result[6] = 1.0 if normalized[6] >= 0.0 else -1.0
+        return result

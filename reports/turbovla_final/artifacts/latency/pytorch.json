@@ -1,0 +1,33 @@
+{
+  "backend": "pytorch",
+  "scope": "model_forward_preprocessed_pixels_and_state_includes_bert_tokenization",
+  "latency_ms": {
+    "synchronized_wall": {
+      "n": 100,
+      "mean": 22.45552542,
+      "median": 22.4563265,
+      "p95": 22.58122745,
+      "p99": 22.74287682,
+      "min": 22.220428,
+      "max": 22.818891,
+      "stdev": 0.09447241767480923
+    }
+  },
+  "software": {
+    "torch": "2.3.1+cu121",
+    "cuda": "12.1",
+    "cudnn": 8902
+  },
+  "gpu": "NVIDIA GeForce RTX 3050 6GB Laptop GPU",
+  "output_shape": [
+    1,
+    12,
+    7
+  ],
+  "schema": "vla.cpp.turbovla_latency.v1",
+  "generated_at": "2026-08-10T15:08:51.806614+07:00",
+  "fixture": "/home/linh/Desktop/TurboVLA/outputs/pytorch_reference_baselines/libero_object_task0_ep0_step0_bf16/fixture",
+  "warmup": 20,
+  "iterations": 100,
+  "host": "linhchu"
+}

@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
 project(vla_cpp LANGUAGES C CXX)
 
+option(VLA_BUILD_SERVERS "Build ZeroMQ/Protobuf VLA and VLM servers" ON)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -22,6 +24,8 @@ FetchContent_Declare(llama
     GIT_REPOSITORY https://github.com/ggml-org/llama.cpp
     GIT_TAG        b9866
     GIT_SHALLOW    TRUE
+    PATCH_COMMAND  git apply --whitespace=nowarn
+                   ${CMAKE_CURRENT_SOURCE_DIR}/cmake/patches/llama-bf16-f32-accumulator.patch
 )
 FetchContent_MakeAvailable(llama)
 
@@ -38,6 +42,8 @@ add_library(vla_core
     src/models/vla_adapter.cpp
     src/models/openvla_oft.cpp
     src/models/vla_jepa.cpp
+    src/models/turbovla.cpp
+    src/models/turbovla_trace.cpp
 )
 target_include_directories(vla_core
     PUBLIC
@@ -51,6 +57,15 @@ if(GGML_CUDA)
 
     enable_language(CUDA)
     find_package(CUDAToolkit REQUIRED)
+    # Keep the PyTorch-parity LayerNorm/softmax translation units explicit
+    # about precise division, sqrt and denormal handling. The vendored patch
+    # also removes target-wide fast math so fused CUDA paths share this policy.
+    foreach(turbovla_precise_cuda_source norm.cu softmax.cu)
+        set_property(SOURCE ${llama_SOURCE_DIR}/ggml/src/ggml-cuda/${turbovla_precise_cuda_source}
+            DIRECTORY ${llama_SOURCE_DIR}/ggml/src/ggml-cuda
+            APPEND PROPERTY COMPILE_OPTIONS
+            --ftz=false --prec-div=true --prec-sqrt=true)
+    endforeach()
     if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
         # Emit SASS per supported GPU (real) and PTX (virtual) only for the newest
         # arch, so future cards can JIT without shipping PTX for every target.
@@ -74,6 +89,36 @@ if(GGML_CUDA)
         src/kernels/bitvla/bitvla_vit_cuda.cu
         src/kernels/bitvla/bitvla_fp32head_cuda.cu
     )
+
+    # PyTorch dispatches TurboVLA's fixed BF16 patch projection through
+    # cuDNN's implicit-precomputed-GEMM convolution.  The NVIDIA pip/conda
+    # package does not install cuDNN into the CUDA toolkit prefix, so permit
+    # its package root to be supplied explicitly.
+    set(VLA_CUDNN_ROOT "" CACHE PATH
+        "Root containing include/cudnn.h and lib/libcudnn.so for TurboVLA parity")
+    find_path(VLA_CUDNN_INCLUDE_DIR cudnn.h
+        HINTS ${VLA_CUDNN_ROOT} $ENV{CUDNN_ROOT}
+        PATH_SUFFIXES include)
+    find_library(VLA_CUDNN_LIBRARY
+        NAMES cudnn libcudnn.so.9 libcudnn.so.8
+        HINTS ${VLA_CUDNN_ROOT} $ENV{CUDNN_ROOT}
+        PATH_SUFFIXES lib)
+    if(VLA_CUDNN_INCLUDE_DIR AND VLA_CUDNN_LIBRARY)
+        target_sources(bitvla_cuda_kernels PRIVATE
+            src/kernels/turbovla/turbovla_patch_cuda.cu)
+        target_include_directories(bitvla_cuda_kernels PRIVATE
+            ${VLA_CUDNN_INCLUDE_DIR})
+        target_link_libraries(bitvla_cuda_kernels PUBLIC ${VLA_CUDNN_LIBRARY})
+        target_compile_definitions(vla_core PUBLIC VLA_TURBOVLA_CUDNN)
+        get_filename_component(VLA_CUDNN_LIBRARY_DIR ${VLA_CUDNN_LIBRARY} DIRECTORY)
+        set_property(TARGET bitvla_cuda_kernels APPEND PROPERTY
+            BUILD_RPATH ${VLA_CUDNN_LIBRARY_DIR})
+        message(STATUS "vla: TurboVLA cuDNN parity kernel enabled (${VLA_CUDNN_LIBRARY})")
+    else()
+        message(STATUS
+            "vla: cuDNN not found; TurboVLA patch projection uses ggml fallback "
+            "(set VLA_CUDNN_ROOT to enable PyTorch parity)")
+    endif()
     set_target_properties(bitvla_cuda_kernels PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON
         POSITION_INDEPENDENT_CODE ON
@@ -92,6 +137,7 @@ if(GGML_METAL AND NOT GGML_CUDA)
     target_compile_definitions(vla_core PUBLIC GGML_USE_METAL)
 endif()
 
+if(VLA_BUILD_SERVERS)
 add_library(vlm_core
     src/vlm/engine.cpp
 )
@@ -176,6 +222,7 @@ target_link_libraries(vlm-server PRIVATE
     protobuf::libprotobuf
     PkgConfig::ZeroMQ
 )
+endif()
 
 # One-shot inference CLI: image + tokens -> action, no server or simulator.
 add_executable(vla-cli
@@ -187,7 +234,10 @@ target_include_directories(vla-cli PRIVATE
 target_link_libraries(vla-cli PRIVATE vla_core)
 
 # --- First-party build hygiene (never applied to the vendored llama.cpp subtree) --
-set(VLA_FIRST_PARTY_TARGETS vla_core vlm_core vla-server vlm-server vla-cli)
+set(VLA_FIRST_PARTY_TARGETS vla_core vla-cli)
+if(VLA_BUILD_SERVERS)
+    list(APPEND VLA_FIRST_PARTY_TARGETS vlm_core vla-server vlm-server)
+endif()
 
 foreach(tgt IN LISTS VLA_FIRST_PARTY_TARGETS)
     # Warn on our own C++ only; nvcc device code keeps its own diagnostics.

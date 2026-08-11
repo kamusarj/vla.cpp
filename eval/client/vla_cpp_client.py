@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 os.environ.setdefault("PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION", "python")
 
+import io
 import json
 import subprocess
 import sys
@@ -31,6 +32,11 @@ import torch.nn.functional as F
 import zmq
 from PIL import Image
 from transformers import AutoTokenizer
+
+try:
+    from .turbovla_aloha import TurboVlaAlohaStats
+except ImportError:
+    from turbovla_aloha import TurboVlaAlohaStats
 
 ARCH_PRESETS = {
     "smolvla": {"image_size": 512, "tokenizer": "HuggingFaceTB/SmolVLM2-500M-Instruct", "max_state_dim": 32},
@@ -49,6 +55,14 @@ ARCH_PRESETS = {
                     "max_state_dim": 8},
     "vla_jepa": {"image_size": 256, "tokenizer": "Qwen/Qwen3-VL-2B-Instruct",
                  "max_state_dim": 8, "use_processor": True},
+    "turbovla": {"image_size": 256, "tokenizer": "google-bert/bert-base-uncased",
+                 "max_state_dim": 8, "max_length": 21},
+    "turbovla_aloha": {
+        "image_size": 256,
+        "tokenizer": "google-bert/bert-base-uncased",
+        "max_state_dim": 7,
+        "max_length": 256,
+    },
     "gr00t_n1_7": {"image_size": 256, "tokenizer": "nvidia/Cosmos-Reason2-2B", "max_state_dim": 132},
 
     "gr00t_n1_5": {"image_size": 224, "tokenizer": "lerobot/eagle2hg-processor-groot-n1p5",
@@ -80,6 +94,32 @@ VLA_JEPA_PROMPT_TPL = (
     + VLA_JEPA_EMBODIED_PROMPT
     + "."
 )
+
+# TurboVLA was trained with a suite-dependent fixed BERT length. Exact known
+# LIBERO instructions use 11/14/21; an unknown instruction safely falls back
+# to the checkpoint-wide maximum (21).
+TURBOVLA_TEXT_LENGTH = {
+    "open the middle drawer of the cabinet": 11,
+    "open the top drawer and put the bowl inside": 11,
+    "push the plate to the front of the stove": 11,
+    "put the bowl on the plate": 11,
+    "put the bowl on the stove": 11,
+    "put the bowl on top of the cabinet": 11,
+    "put the cream cheese in the bowl": 11,
+    "put the wine bottle on the rack": 11,
+    "put the wine bottle on top of the cabinet": 11,
+    "turn on the stove": 11,
+    "pick up the alphabet soup and place it in the basket": 14,
+    "pick up the bbq sauce and place it in the basket": 14,
+    "pick up the butter and place it in the basket": 14,
+    "pick up the chocolate pudding and place it in the basket": 14,
+    "pick up the cream cheese and place it in the basket": 14,
+    "pick up the ketchup and place it in the basket": 14,
+    "pick up the milk and place it in the basket": 14,
+    "pick up the orange juice and place it in the basket": 14,
+    "pick up the salad dressing and place it in the basket": 14,
+    "pick up the tomato sauce and place it in the basket": 14,
+}
 
 def _load_pb():
 
@@ -139,6 +179,8 @@ class VlaCppClient:
         max_length: int | None = None,
         recv_timeout_ms: int = DEFAULT_RECV_TIMEOUT_MS,
         n_action_steps: int = 1,
+        dump_request_dir: str | Path | None = None,
+        dump_request_limit: int = 5,
 
         stats_json: str | Path | None = None,
         bitvla_unnorm_key: str | None = None,
@@ -183,6 +225,19 @@ class VlaCppClient:
         self.max_length = max_length
         self._step = 0
         self._last_response = None
+        self.dump_request_dir = Path(dump_request_dir) if dump_request_dir else None
+        self.dump_request_limit = dump_request_limit
+        self._dumped_requests = 0
+        if self.dump_request_dir is not None:
+            if dump_request_limit < 1:
+                raise ValueError(
+                    f"dump_request_limit must be >= 1, got {dump_request_limit}")
+            self.dump_request_dir.mkdir(parents=True, exist_ok=True)
+            print(
+                f"vla-cpp-direct: dumping up to {dump_request_limit} requests to "
+                f"{self.dump_request_dir.resolve()}",
+                flush=True,
+            )
 
         if n_action_steps < 1:
             raise ValueError(f"n_action_steps must be >= 1, got {n_action_steps}")
@@ -280,6 +335,17 @@ class VlaCppClient:
             print(f"vla-cpp-direct[arch=pi05]: state QUANTILES via "
                   f"{stats_path}::observation.state ({self._pi05_state_q01.shape[0]}-D)",
                   flush=True)
+
+        self._turbovla_aloha_stats = None
+        if arch == "turbovla_aloha":
+            if stats_json is None:
+                raise ValueError("arch=turbovla_aloha requires --stats-json")
+            self._turbovla_aloha_stats = TurboVlaAlohaStats.from_json(stats_json)
+            print(
+                "vla-cpp-direct[arch=turbovla_aloha]: MEAN_STD state and "
+                f"MIN_MAX action stats via {Path(stats_json)}",
+                flush=True,
+            )
 
 
         self._gr00t_action_unnorm = None
@@ -496,6 +562,84 @@ class VlaCppClient:
 
         return True
 
+    def _send_request(self, req: Any) -> None:
+        """Optionally dump the exact protobuf payload, then send it to vla-server."""
+        payload = req.SerializeToString()
+        if (self.dump_request_dir is not None
+                and self._dumped_requests < self.dump_request_limit):
+            request_dir = self.dump_request_dir / f"request_{int(req.request_id):06d}"
+            request_dir.mkdir(parents=True, exist_ok=True)
+            (request_dir / "request.pb").write_bytes(payload)
+
+            lang_tokens = np.asarray(req.lang_tokens, dtype=np.int32)
+            state = np.asarray(req.state, dtype=np.float32)
+            np.save(request_dir / "lang_tokens.npy", lang_tokens)
+            np.save(request_dir / "state.npy", state)
+            if req.noise:
+                np.save(request_dir / "noise.npy", np.asarray(req.noise, dtype=np.float32))
+            if req.attention_mask:
+                np.save(
+                    request_dir / "attention_mask.npy",
+                    np.asarray(req.attention_mask, dtype=np.uint32),
+                )
+
+            image_meta = []
+            for index, proto_image in enumerate(req.images):
+                if proto_image.encoding == self.pb.Image.F32_RGB_01:
+                    array = np.frombuffer(proto_image.data, dtype=np.float32).reshape(
+                        proto_image.height, proto_image.width, 3
+                    ).copy()
+                    preview = np.clip(array * 255.0, 0, 255).astype(np.uint8)
+                    encoding = "F32_RGB_01"
+                elif proto_image.encoding == self.pb.Image.RGB_U8:
+                    array = np.frombuffer(proto_image.data, dtype=np.uint8).reshape(
+                        proto_image.height, proto_image.width, 3
+                    ).copy()
+                    preview = array
+                    encoding = "RGB_U8"
+                else:
+                    preview = np.asarray(
+                        Image.open(io.BytesIO(proto_image.data)).convert("RGB"),
+                        dtype=np.uint8,
+                    )
+                    array = preview
+                    encoding = "JPEG"
+
+                np.save(request_dir / f"image_{index}.npy", array)
+                Image.fromarray(preview, mode="RGB").save(
+                    request_dir / f"image_{index}.png"
+                )
+                image_meta.append({
+                    "index": index,
+                    "encoding": encoding,
+                    "shape": list(array.shape),
+                    "dtype": str(array.dtype),
+                    "min": float(array.min()),
+                    "max": float(array.max()),
+                })
+
+            metadata = {
+                "request_id": int(req.request_id),
+                "arch": self.arch,
+                "protobuf_file": "request.pb",
+                "images": image_meta,
+                "lang_tokens": lang_tokens.tolist(),
+                "decoded_prompt": self.tok.decode(
+                    lang_tokens.tolist(), skip_special_tokens=False
+                ),
+                "state": state.tolist(),
+                "noise_count": len(req.noise),
+                "attention_mask_count": len(req.attention_mask),
+            }
+            (request_dir / "metadata.json").write_text(
+                json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            self._dumped_requests += 1
+            print(f"vla-cpp-direct: dumped request to {request_dir}", flush=True)
+
+        self.sock.send(payload)
+
     def reset(self) -> None:
 
         self._action_queue.clear()
@@ -550,16 +694,32 @@ class VlaCppClient:
         if isinstance(s, torch.Tensor):
             s = s.numpy()
         s = np.asarray(s, dtype=np.float32).reshape(-1)
+        if self._turbovla_aloha_stats is not None:
+            s = self._turbovla_aloha_stats.normalize_state(s)
+        if s.shape[0] > self.max_state_dim:
+            raise ValueError(
+                f"state has {s.shape[0]} values, max_state_dim={self.max_state_dim}"
+            )
         state_padded = np.zeros(self.max_state_dim, dtype=np.float32)
         state_padded[:s.shape[0]] = s
 
         task = observations.get("task", "")
         if isinstance(task, bytes):
             task = task.decode()
-        if not task.endswith("\n"):
+        if self.arch not in ("turbovla", "turbovla_aloha") and not task.endswith("\n"):
             task = task + "\n"
-        toks = self.tok(task, padding=False, truncation=True,
-                        max_length=self.max_length, return_tensors="np")
+        if self.arch == "turbovla":
+            task = task.strip().lower()
+            text_length = TURBOVLA_TEXT_LENGTH.get(task, self.max_length)
+            toks = self.tok(task, padding="max_length", truncation=True,
+                            max_length=text_length, return_tensors="np")
+        elif self.arch == "turbovla_aloha":
+            task = task.strip().lower()
+            toks = self.tok(task, padding=False, truncation=True,
+                            max_length=self.max_length, return_tensors="np")
+        else:
+            toks = self.tok(task, padding=False, truncation=True,
+                            max_length=self.max_length, return_tensors="np")
         lang = toks["input_ids"][0].astype(np.int32)
 
         req = self.pb.PredictRequest()
@@ -572,9 +732,11 @@ class VlaCppClient:
             ip.width  = img.shape[1]
             ip.data   = img.tobytes()
         req.lang_tokens.extend(lang.tolist())
+        if self.arch in ("turbovla", "turbovla_aloha"):
+            req.attention_mask.extend(toks["attention_mask"][0].astype(np.int32).tolist())
         req.state.extend(state_padded.tolist())
 
-        self.sock.send(req.SerializeToString())
+        self._send_request(req)
         body = self.sock.recv()
         resp = self.pb.PredictResponse()
         resp.ParseFromString(body)
@@ -583,8 +745,11 @@ class VlaCppClient:
 
         self._last_response = resp
 
-        return (np.array(resp.action_chunk, dtype=np.float32)
-                  .reshape(resp.chunk_size, resp.action_dim))
+        chunk = (np.array(resp.action_chunk, dtype=np.float32)
+                   .reshape(resp.chunk_size, resp.action_dim))
+        if self._turbovla_aloha_stats is not None:
+            chunk = self._turbovla_aloha_stats.unnormalize_action(chunk)
+        return chunk
 
     _VJ_PS, _VJ_TPS, _VJ_MERGE, _VJ_SIDE = 16, 2, 2, 256
 

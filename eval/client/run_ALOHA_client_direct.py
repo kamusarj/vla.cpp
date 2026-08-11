@@ -254,7 +254,7 @@ def _hwc_u8(img: np.ndarray, size: int) -> np.ndarray:
 
 def build_obs(arch, front_rgb, wrist_rgb, left_state, task,
               image_size, max_state_dim, right_state=None):
-    if arch in ("smolvla", "pi0", "bitvla"):
+    if arch in ("smolvla", "pi0", "bitvla", "turbovla_aloha"):
         state = left_state.astype(np.float32)
         if right_state is not None:
             state = np.concatenate([state, right_state.astype(np.float32)])
@@ -310,7 +310,14 @@ class AlohaInferenceNode(Node):
         self.task          = args.task
         self.executed_length = args.executed_length
         self.smooth_step   = args.smooth_step
+        self.action_hz     = args.action_hz
         self.dual_arm      = args.dual_arm
+        if self.action_hz <= 0:
+            raise ValueError("--action-hz must be positive")
+        if self.arch == "turbovla_aloha" and self.dual_arm:
+            raise ValueError(
+                "this TurboVLA checkpoint is left-arm-only (7-D); do not pass --dual-arm"
+            )
 
         self._setup_logger()
 
@@ -695,7 +702,7 @@ class AlohaInferenceNode(Node):
             self._pub_left(row[:ARM_DOF], row[ARM_DOF])
             if self.dual_arm and row.size >= JOINT_DOF * 2:
                 self._pub_right(row[JOINT_DOF:JOINT_DOF + ARM_DOF], row[JOINT_DOF + ARM_DOF])
-            time.sleep(max(0.0, 1.0 / 200.0 - (time.time() - t_step)))
+            time.sleep(max(0.0, 1.0 / self.action_hz - (time.time() - t_step)))
 
         with self.lock:
             last = chunk[n_steps - 1]
@@ -793,6 +800,9 @@ def main():
         help="Steps to execute per inference call before re-querying.")
     parser.add_argument("--smooth-step", type=int, default=20,
         help="Interpolation sub-steps between actions (1 = no smoothing).")
+    parser.add_argument("--action-hz", type=float, default=200.0,
+        help="Command publication rate. TurboVLA ALOHA was trained at 15 Hz; "
+             "the default 200 Hz preserves the existing GR00T deployment path.")
     parser.add_argument("--dual-arm", action="store_true")
     parser.add_argument("--stats-json",       type=str, default=None)
     parser.add_argument("--bitvla-unnorm-key", type=str, default=None)
