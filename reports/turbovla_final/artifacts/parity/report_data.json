@@ -1,0 +1,96 @@
+{
+  "schema": "vla.cpp.turbovla_trace_report.v3",
+  "generated_at": "2026-08-10T14:48:18.874571+07:00",
+  "reference": "/run/media/linh/Data/Shared2OS/vla.cpp/.vla-pytorch-current-exhaustive.Pdt9wg/forward_000000_rank_0",
+  "candidate": "/run/media/linh/Data/Shared2OS/vla.cpp/.vla-final-exact-exhaustive.6R5Smq/forward_000000_rank_0",
+  "raw_trace_retention": "removed after archiving comparison artifacts",
+  "comparison_summary": {
+    "status": "PASS",
+    "contract": null,
+    "require_all": true,
+    "coverage_status": "PASS",
+    "expected_count": 2968,
+    "overlap_count": 2968,
+    "passing_count": 2968,
+    "failing_count": 0,
+    "missing_in_cpp_count": 0,
+    "missing_in_python_count": 0,
+    "candidate_outside_contract_count": 0,
+    "atol": 0.05,
+    "rtol": 0.05
+  },
+  "action_normalized": {
+    "status": "PASS_TOLERANCE",
+    "mean_abs_error": 0.0006191164391653036,
+    "rmse": 0.0022360230311676476,
+    "max_abs_error": 0.019835948944091797,
+    "cosine_similarity": 0.9999872725621568,
+    "pearson_correlation": 0.9999824266759151,
+    "per_dimension": [
+      {
+        "dimension": 0,
+        "name": "x",
+        "mae": 0.0003715206791336338,
+        "rmse": 0.0004702416501307851,
+        "max_abs": 0.0011825263500213623,
+        "pearson": 0.9998817026049254
+      },
+      {
+        "dimension": 1,
+        "name": "y",
+        "mae": 0.0010173308352629344,
+        "rmse": 0.0011285767488604995,
+        "max_abs": 0.002129852771759033,
+        "pearson": 0.9999752707612702
+      },
+      {
+        "dimension": 2,
+        "name": "z",
+        "mae": 0.0003424151024470727,
+        "rmse": 0.0004283239217801346,
+        "max_abs": 0.000991816632449627,
+        "pearson": 0.9999927487103932
+      },
+      {
+        "dimension": 3,
+        "name": "roll",
+        "mae": 0.00035351018110911053,
+        "rmse": 0.00045848388051365904,
+        "max_abs": 0.0011076033115386963,
+        "pearson": 0.9995265766888572
+      },
+      {
+        "dimension": 4,
+        "name": "pitch",
+        "mae": 0.00023596151731908321,
+        "rmse": 0.0002985385700116376,
+        "max_abs": 0.0005753785371780396,
+        "pearson": 0.9999716132400983
+      },
+      {
+        "dimension": 5,
+        "name": "yaw",
+        "mae": 0.00016065877328704423,
+        "rmse": 0.0002552705170809857,
+        "max_abs": 0.0007320363074541092,
+        "pearson": 0.9982683374057124
+      },
+      {
+        "dimension": 6,
+        "name": "gripper",
+        "mae": 0.0018524179855982463,
+        "rmse": 0.005740716254829484,
+        "max_abs": 0.019835948944091797,
+        "pearson": 0.9999996716882383
+      }
+    ]
+  },
+  "action_denormalized": {
+    "status": "PASS_TOLERANCE",
+    "mean_abs_error": 0.00026853027797880627,
+    "rmse": 0.00046542971032130764,
+    "max_abs_error": 0.001996755599975586,
+    "cosine_similarity": 0.9999994372737547,
+    "pearson_correlation": 0.9999992798106603
+  }
+}

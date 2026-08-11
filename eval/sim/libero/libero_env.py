@@ -14,7 +14,10 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import os
+import string
 
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -27,8 +30,19 @@ import torch
 from gymnasium import spaces
 from gymnasium.envs.registration import register
 
-from libero.libero import benchmark, get_libero_path
+from libero.libero import benchmark, get_libero_path as _upstream_get_libero_path
 from libero.libero.envs import OffScreenRenderEnv
+
+
+def _get_libero_path(query_key: str) -> str:
+    """Look up a LIBERO resource without unrelated optional-dataset warnings."""
+    output = io.StringIO()
+    with contextlib.redirect_stdout(output):
+        path = _upstream_get_libero_path(query_key)
+    for line in output.getvalue().splitlines():
+        if query_key == "datasets" or not line.startswith("[Warning]: datasets path "):
+            print(line)
+    return path
 
 def _parse_camera_names(camera_name: str | Sequence[str]) -> list[str]:
 
@@ -64,7 +78,7 @@ def _select_task_ids(total_tasks: int, task_ids: Iterable[int] | None) -> list[i
 
 def get_task_init_states(task_suite: Any, i: int) -> np.ndarray:
     init_states_path = (
-        Path(get_libero_path("init_states"))
+        Path(_get_libero_path("init_states"))
         / task_suite.tasks[i].problem_folder
         / task_suite.tasks[i].init_states_file
     )
@@ -197,7 +211,10 @@ class LiberoEnv(gym.Env):
                         ),
                     }
                 ),
-                "task_description": spaces.Text(max_length=512),
+                "task_description": spaces.Text(
+                    max_length=512,
+                    charset=string.ascii_letters + string.digits + string.punctuation + " ",
+                ),
             }
         )
         self.action_space = spaces.Box(
@@ -253,7 +270,9 @@ class LiberoEnv(gym.Env):
         task = task_suite.get_task(task_id)
         self.task = task.name
         self.task_description = task.language
-        task_bddl_file = os.path.join(get_libero_path("bddl_files"), task.problem_folder, task.bddl_file)
+        task_bddl_file = os.path.join(
+            _get_libero_path("bddl_files"), task.problem_folder, task.bddl_file
+        )
 
         env_args = {
             "bddl_file_name": task_bddl_file,

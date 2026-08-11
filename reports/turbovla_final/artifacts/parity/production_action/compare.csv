@@ -1,0 +1,3 @@
+call_index,candidate_required_level,candidate_trace_id,canonical_required_level,cosine_similarity,max_abs_error,mean_abs_error,mismatch_count,mismatch_ratio,pearson_correlation,reference_trace_id,rmse,semantic_name,status,value_count
+0,boundary,1327,boundary,0.9999469766523854,0.040951311588287354,0.0011292808287959946,0,0.0,0.9999258465171968,2952,0.0045612112479587056,action.normalized,PASS_TOLERANCE,84
+0,boundary,2965,boundary,0.9999986810405361,0.002648472785949707,0.00044290473063786823,0,0.0,0.9999983599978605,2965,0.0007334609851771225,action.denormalized,PASS_TOLERANCE,84

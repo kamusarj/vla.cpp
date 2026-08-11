@@ -1,0 +1,57 @@
+{
+  "backend": "vla.cpp",
+  "scope": "server_predict_rotated_rgb_tokens_and_normalized_state",
+  "latency_ms": {
+    "client_wall_local_zmq": {
+      "n": 100,
+      "mean": 22.73189613,
+      "median": 22.7461025,
+      "p95": 22.98400025,
+      "p99": 23.01854325,
+      "min": 22.304071,
+      "max": 23.076978,
+      "stdev": 0.17032377754504238
+    },
+    "server_predict_total": {
+      "n": 100,
+      "mean": 22.06945167541504,
+      "median": 22.06251049041748,
+      "p95": 22.19123363494873,
+      "p99": 22.25968873977661,
+      "min": 21.950838088989258,
+      "max": 22.26926040649414,
+      "stdev": 0.07077016007428978
+    },
+    "server_vision": {
+      "n": 100,
+      "mean": 14.989318609237671,
+      "median": 14.988365173339844,
+      "p95": 15.06573920249939,
+      "p99": 15.187295322418214,
+      "min": 14.866093635559082,
+      "max": 15.189597129821777,
+      "stdev": 0.05223695424380724
+    },
+    "server_inference_after_vision": {
+      "n": 100,
+      "mean": 7.075602240562439,
+      "median": 7.0616326332092285,
+      "p95": 7.1557005643844604,
+      "p99": 7.177710132598877,
+      "min": 7.007774829864502,
+      "max": 7.266608238220215,
+      "stdev": 0.04634511650302766
+    }
+  },
+  "output_shape": [
+    1,
+    12,
+    7
+  ],
+  "schema": "vla.cpp.turbovla_latency.v1",
+  "generated_at": "2026-08-10T16:46:25.353466+07:00",
+  "fixture": "/home/linh/Desktop/TurboVLA/outputs/pytorch_reference_baselines/libero_object_task0_ep0_step0_bf16/fixture",
+  "warmup": 20,
+  "iterations": 100,
+  "host": "linhchu"
+}

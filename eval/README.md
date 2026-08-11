@@ -1,8 +1,34 @@
 # Evaluation
 
-The eval scaffold drives `vla-server` against two simulators end-to-end over the ZeroMQ +
+The eval scaffold drives `vla-server` against three simulators end-to-end over the ZeroMQ +
 protobuf protocol. The C++ server does all model inference on CPU/GPU; the Python client only runs
 the simulator and the per-arch normalisation, so it stays on CPU.
+
+TurboVLA's downloaded ALOHA checkpoint has a MuJoCo implementation of its exact
+left-arm task: grasp the carrot from the plate and place it in the cup. It uses
+physical ViperX joints, position actuators, contacts, high/wrist rendering, and
+an object-state success condition:
+
+```bash
+bash eval/sim/aloha/setup_aloha_sim.sh
+eval/run_turbovla_aloha.sh --episodes 1
+```
+
+The one-command runner starts `vla-server`, maps the left-arm dataset action to
+the official bimanual controller, executes three 20 ms controls per action, and
+writes MP4 video, NPZ state/action trajectories, and a JSON summary under
+`outputs/turbovla_aloha_sim/`. See `docs/TURBOVLA.md` for physical ROS2
+deployment as well.
+
+To evaluate the GGUF directly on the real recorded ALOHA validation and train
+samples using TurboVLA's published open-loop protocol:
+
+```bash
+eval/run_turbovla_aloha_openloop.sh
+```
+
+This produces MSE, MAE, RMSE, and NMSE per joint, 40 trajectory plots, latency
+statistics, and a `RESULTS.md` comparison against the published PyTorch run.
 
 ## Install simulators
 
@@ -28,6 +54,17 @@ bash eval/sim/simpler/setup_SimplerEnv.sh
 Clones SimplerEnv (and its nested `ManiSkill2_real2sim`) into `eval/sim/simpler/SimplerEnv/`,
 creates `eval/sim/simpler/simpler_uv/.venv/`, and pins its ManiSkill2 + SimplerEnv editable
 installs.
+
+### ALOHA (TurboVLA)
+
+```bash
+bash eval/sim/aloha/setup_aloha_sim.sh
+```
+
+This installs pinned commit `d0290460` of `google-deepmind/aloha_sim`,
+`dm-control==1.0.31`, and MuJoCo 3.3 in an isolated environment. It is the same
+official ALOHA composer backend and carrot/cup adaptation used by the local Octo
+simulation reference.
 
 ## Run an episode (LIBERO)
 

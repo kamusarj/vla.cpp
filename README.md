@@ -1,5 +1,7 @@
 # vla.cpp
 
+[English](README.md) | [Tiếng Việt](README_VI.md)
+
 ![logo](assets/logo_vlacpp_white.png)
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE.md)
@@ -9,7 +11,8 @@
 [![Docs](https://img.shields.io/badge/docs-Learn%20vla.cpp-brightgreen)](https://fai-modelopt-tech.github.io/learn-vla-cpp/)
 
 A C++ inference engine for **Vision-Language-Action (VLA) models**, built on [`llama.cpp`](https://github.com/ggml-org/llama.cpp).
-It runs the open VLA policies - SmolVLA, π0, BitVLA, Evo-1, GR00T N1.5/1.6/1.7 and more -
+It runs the open VLA policies - SmolVLA, π0, BitVLA, Evo-1, TurboVLA,
+GR00T N1.5/1.6/1.7 and more -
 under one runtime, each packaged as a single self-contained GGUF that needs no Python or
 PyTorch at inference time. The binaries drive robots on **CPU**, **Apple Silicon**, or
 **CUDA**, from consumer GPUs down to Jetson-class boards.
@@ -261,6 +264,7 @@ supported (released and benchmarked), `~` = in progress, `-` = planned.
 | [VLA-Adapter](https://hf.co/vrfai/vla-adapter-libero-gguf)     | Y | Y | ~ | - | - |
 | [OpenVLA-OFT](https://hf.co/vrfai/openvla-oft-libero-gguf)     | Y | Y | ~ | - | - |
 | [VLA-JEPA](https://hf.co/vrfai/vla-jepa-libero)                | Y | Y | ~ | - | - |
+| [TurboVLA](docs/TURBOVLA.md)                                   | Y | Y | ~ | - | - |
 
 \* Evo-1 loads and runs, but the released GGUF scores 0% on `libero_object` instead of the
 reported 94.5%. Do not rely on it for task success yet.
@@ -297,9 +301,11 @@ Supported VLA models:
 - [OpenVLA-OFT](https://github.com/moojink/openvla-oft) - Moo Jin Kim et al.
 - [GR00T N1.x](https://github.com/NVIDIA/Isaac-GR00T) - NVIDIA Isaac.
 - [VLA-JEPA](https://github.com/ginwind/VLA-JEPA) - Jingwen Sun et al.
+- [TurboVLA](https://github.com/H-EmbodVis/TurboVLA) - H-EmbodVis team.
 
 Built on:
 
 - [`llama.cpp`](https://github.com/ggml-org/llama.cpp) - LLM inference engine in C/C++.
 - [LIBERO](https://github.com/Lifelong-Robot-Learning/LIBERO) - benchmark suite for the success-rate sweeps.
-- [SimplerEnv](https://github.com/simpler-env/SimplerEnv) - the second simulator in the eval scaffold.
+- [SimplerEnv](https://github.com/simpler-env/SimplerEnv) - real-to-sim robot evaluation environments.
+- [google-deepmind/aloha_sim](https://github.com/google-deepmind/aloha_sim) - official bimanual ALOHA MuJoCo/composer simulation.

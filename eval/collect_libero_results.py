@@ -330,11 +330,16 @@ def render_markdown(
     return "\n".join(lines)
 
 def main() -> int:
+    global TASK_SUITE, N_TASKS
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--sweep", type=Path, default=DEFAULT_SWEEP,
                     help=f"sweep root (default: {DEFAULT_SWEEP})")
     ap.add_argument("--per-task", action="store_true",
                     help="also print per-task breakdown for each model to stdout")
+    ap.add_argument("--suite", default=TASK_SUITE,
+                    help=f"LIBERO suite name stored in result paths (default: {TASK_SUITE})")
+    ap.add_argument("--n-tasks", type=int, default=N_TASKS,
+                    help=f"number of task IDs to collect (default: {N_TASKS})")
     ap.add_argument("--md", type=Path, default=None, metavar="PATH",
                     help="write a markdown report to PATH (default: <sweep>/report.md). "
                          "Pass --no-md to skip.")
@@ -350,6 +355,10 @@ def main() -> int:
     ap.add_argument("--no-reproducibility", action="store_true",
                     help="omit the ## Reproducibility version block from the markdown report")
     args = ap.parse_args()
+    if args.n_tasks < 1:
+        ap.error("--n-tasks must be positive")
+    TASK_SUITE = args.suite
+    N_TASKS = args.n_tasks
 
     if not args.sweep.is_dir():
         print(f"ERROR: sweep dir not found: {args.sweep}", file=sys.stderr)

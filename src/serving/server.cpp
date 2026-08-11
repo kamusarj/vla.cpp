@@ -89,9 +89,11 @@ bool decode_image(const vla::Image & img,
                          img.data().size(), img.width(), img.height(), expected);
             return false;
         }
-        u8.assign(reinterpret_cast<const uint8_t*>(img.data().data()),
-                  reinterpret_cast<const uint8_t*>(img.data().data()) + expected);
-        view = { u8.data(), int(img.width()), int(img.height()), vla::PixelFormat::U8 };
+        // PredictRequest owns the protobuf string until predict() returns, so
+        // the U8 model input can borrow it directly.  Avoid copying both camera
+        // images into temporary vectors on every request.
+        view = { img.data().data(), int(img.width()), int(img.height()),
+                 vla::PixelFormat::U8 };
         return true;
     } else if (img.encoding() == vla::Image::F32_RGB_01) {
         if (img.width() == 0 || img.height() == 0 ||

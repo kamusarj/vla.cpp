@@ -1,0 +1,36 @@
+[
+  {
+    "semantic_name": "action.normalized",
+    "call_index": 0,
+    "reference_trace_id": 2952,
+    "candidate_trace_id": 1327,
+    "canonical_required_level": "boundary",
+    "candidate_required_level": "boundary",
+    "max_abs_error": 0.040951311588287354,
+    "mean_abs_error": 0.0011292808287959946,
+    "rmse": 0.0045612112479587056,
+    "cosine_similarity": 0.9999469766523854,
+    "pearson_correlation": 0.9999258465171968,
+    "value_count": 84,
+    "mismatch_count": 0,
+    "mismatch_ratio": 0.0,
+    "status": "PASS_TOLERANCE"
+  },
+  {
+    "semantic_name": "action.denormalized",
+    "call_index": 0,
+    "reference_trace_id": 2965,
+    "candidate_trace_id": 2965,
+    "canonical_required_level": "boundary",
+    "candidate_required_level": "boundary",
+    "max_abs_error": 0.002648472785949707,
+    "mean_abs_error": 0.00044290473063786823,
+    "rmse": 0.0007334609851771225,
+    "cosine_similarity": 0.9999986810405361,
+    "pearson_correlation": 0.9999983599978605,
+    "value_count": 84,
+    "mismatch_count": 0,
+    "mismatch_ratio": 0.0,
+    "status": "PASS_TOLERANCE"
+  }
+]

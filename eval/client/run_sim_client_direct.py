@@ -29,9 +29,11 @@ from client.adapters import (
     Evo1PipelineAdapter,
     Gr00tPipelineAdapter,
     Gr00tN15PipelineAdapter,
+    TurboVlaLiberoAdapter,
 )
 
-ARCH_CHOICES = sorted(ARCH_PRESETS)
+# This entry targets ALOHA joint-space clients, not the LIBERO gym wrapper.
+ARCH_CHOICES = sorted(name for name in ARCH_PRESETS if name != "turbovla_aloha")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -82,7 +84,17 @@ if __name__ == "__main__":
              "SmolVLAPolicy._action_queue. Defaults to 1 (re-predict every step - "
              "historical SmolVLA path). For π0 set to the checkpoint's "
              "`n_action_steps` (pi0_libero_base=10, pi0_libero_finetuned_v044=50); "
-             "for BitVLA pass 8 (= NUM_ACTIONS_CHUNK).",
+             "for BitVLA pass 8 (= NUM_ACTIONS_CHUNK), and for TurboVLA pass 12 "
+             "(the official aligned open-loop protocol).",
+    )
+    parser.add_argument(
+        "--dump-request-dir", type=str, default=None,
+        help="Save exact protobuf requests plus viewable images, state and tokens "
+             "before sending them to vla-server (disabled by default).",
+    )
+    parser.add_argument(
+        "--dump-request-limit", type=int, default=5,
+        help="Maximum number of inference requests to save (default: 5).",
     )
 
     parser.add_argument(
@@ -116,6 +128,8 @@ if __name__ == "__main__":
         max_length=args.max_length,
         recv_timeout_ms=args.recv_timeout_ms,
         n_action_steps=args.n_action_steps,
+        dump_request_dir=args.dump_request_dir,
+        dump_request_limit=args.dump_request_limit,
         stats_json=args.stats_json,
         bitvla_unnorm_key=args.bitvla_unnorm_key,
     )
@@ -127,15 +141,21 @@ if __name__ == "__main__":
     elif args.arch in ("gr00t_n1_6", "gr00t_n1_7"):
 
         client = Gr00tPipelineAdapter(client=client)
+    elif args.arch == "turbovla":
+        client = TurboVlaLiberoAdapter(client=client)
     else:
         client = LeRobotPipelineAdapter(client=client)
 
+    env_kwargs = {}
+    if args.arch == "turbovla":
+        env_kwargs.update(observation_width=256, observation_height=256)
     env = gym.make(
         f"{args.task}/task_{args.task_id}",
         seed=args.seed,
         video_fps=args.fps,
         output_video_dir=output_dir,
         video_view_mode=args.view_mode,
+        **env_kwargs,
     )
 
     success_count, inference_times = 0.0, []
