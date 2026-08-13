@@ -1,0 +1,10 @@
+date=2026-08-13T10:58:54+07:00
+gr00t_ref=376ba890cff8c9de64d71d982772a9c36185fdd7
+checkpoint=/home/huy/vla.cpp/checkpoints/checkpoint2
+runtime_checkpoint=/home/huy/vla.cpp/gr00t-openloop-work/runtime-checkpoint2-pruned
+dataset=/home/huy/vla.cpp/datasets/ur10e-cup-eval-v2
+steps=814
+execution_horizon=16
+denoising_steps=4
+gpu=0, NVIDIA GeForce RTX 5060 Ti, 16311, 15186, 595.84
+Python 3.12.3

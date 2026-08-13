@@ -1,0 +1,79 @@
+WARNING:root:Could not find checkpoint-<step> pattern in path: /home/huy/vla.cpp/gr00t-openloop-work/runtime-checkpoint2-pruned
+/home/huy/vla.cpp/gr00t-openloop-work/Isaac-GR00T/.venv/lib/python3.12/site-packages/albumentations/__init__.py:13: UserWarning: A new version of Albumentations is available: 2.0.8 (you have 1.4.18). Upgrade using: pip install -U albumentations. To disable automatic update checks, set the environment variable NO_ALBUMENTATIONS_UPDATE to 1.
+  check_for_updates()
+Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3VLForConditionalGeneration is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3VLModel is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3VLVisionModel is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+Flash Attention 2 only supports torch.float16 and torch.bfloat16 dtypes, but the current dype in Qwen3VLTextModel is torch.float32. You should run training or inference using Automatic Mixed-Precision via the `with torch.autocast(device_type='torch_device'):` decorator, or load the model with the `dtype` argument. Example: `model = AutoModel.from_pretrained("openai/whisper-tiny", attn_implementation="flash_attention_2", dtype=torch.float16)`
+INFO:gr00t.model.gr00t_n1d7.gr00t_n1d7:Using AlternateVLDiT for diffusion model
+Total number of DiT parameters:  550386688
+Total number of SelfAttentionTransformer parameters:  201433088
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:00<00:00, 109.91it/s]
+INFO:root:Using 4 denoising steps
+INFO:root:Current modality config:
+{'video': ModalityConfig(delta_indices=[0], modality_keys=['side', 'wrist'], sin_cos_embedding_keys=None, mean_std_embedding_keys=None, action_configs=None), 'state': ModalityConfig(delta_indices=[0], modality_keys=['arm_joints', 'gripper'], sin_cos_embedding_keys=['arm_joints'], mean_std_embedding_keys=None, action_configs=None), 'action': ModalityConfig(delta_indices=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], modality_keys=['arm_joints', 'gripper'], sin_cos_embedding_keys=None, mean_std_embedding_keys=None, action_configs=[ActionConfig(rep=<ActionRepresentation.ABSOLUTE: 'absolute'>, type=<ActionType.NON_EEF: 'non_eef'>, format=<ActionFormat.DEFAULT: 'default'>, state_key=None), ActionConfig(rep=<ActionRepresentation.ABSOLUTE: 'absolute'>, type=<ActionType.NON_EEF: 'non_eef'>, format=<ActionFormat.DEFAULT: 'default'>, state_key=None)]), 'language': ModalityConfig(delta_indices=[0], modality_keys=['annotation.human.task_description'], sin_cos_embedding_keys=None, mean_std_embedding_keys=None, action_configs=None)}
+INFO:root:Dataset length: 1
+INFO:root:Running evaluation on trajectories: [0]
+INFO:root:Running trajectory: 0
+INFO:root:Using 814 steps (requested: 814, trajectory length: 814)
+INFO:root:inferencing at step: 0
+INFO:root:inferencing at step: 16
+INFO:root:inferencing at step: 32
+INFO:root:inferencing at step: 48
+INFO:root:inferencing at step: 64
+INFO:root:inferencing at step: 80
+INFO:root:inferencing at step: 96
+INFO:root:inferencing at step: 112
+INFO:root:inferencing at step: 128
+INFO:root:inferencing at step: 144
+INFO:root:inferencing at step: 160
+INFO:root:inferencing at step: 176
+INFO:root:inferencing at step: 192
+INFO:root:inferencing at step: 208
+INFO:root:inferencing at step: 224
+INFO:root:inferencing at step: 240
+INFO:root:inferencing at step: 256
+INFO:root:inferencing at step: 272
+INFO:root:inferencing at step: 288
+INFO:root:inferencing at step: 304
+INFO:root:inferencing at step: 320
+INFO:root:inferencing at step: 336
+INFO:root:inferencing at step: 352
+INFO:root:inferencing at step: 368
+INFO:root:inferencing at step: 384
+INFO:root:inferencing at step: 400
+INFO:root:inferencing at step: 416
+INFO:root:inferencing at step: 432
+INFO:root:inferencing at step: 448
+INFO:root:inferencing at step: 464
+INFO:root:inferencing at step: 480
+INFO:root:inferencing at step: 496
+INFO:root:inferencing at step: 512
+INFO:root:inferencing at step: 528
+INFO:root:inferencing at step: 544
+INFO:root:inferencing at step: 560
+INFO:root:inferencing at step: 576
+INFO:root:inferencing at step: 592
+INFO:root:inferencing at step: 608
+INFO:root:inferencing at step: 624
+INFO:root:inferencing at step: 640
+INFO:root:inferencing at step: 656
+INFO:root:inferencing at step: 672
+INFO:root:inferencing at step: 688
+INFO:root:inferencing at step: 704
+INFO:root:inferencing at step: 720
+INFO:root:inferencing at step: 736
+INFO:root:inferencing at step: 752
+INFO:root:inferencing at step: 768
+INFO:root:inferencing at step: 784
+INFO:root:inferencing at step: 800
+INFO:root:Unnormalized Action MSE across single traj: 0.000725037360098213
+INFO:root:Unnormalized Action MAE across single traj: 0.0101807601749897
+INFO:root:state_joints vs time (814, 7)
+INFO:root:gt_action_joints vs time (814, 7)
+INFO:root:pred_action_joints vs time (814, 7)
+INFO:root:MSE for trajectory 0: 0.000725037360098213, MAE: 0.0101807601749897
+INFO:root:Average MSE across all trajs: 0.000725037360098213
+INFO:root:Average MAE across all trajs: 0.0101807601749897
+INFO:root:Done
+[W813 10:59:18.739640019 AllocatorConfig.cpp:28] Warning: PYTORCH_CUDA_ALLOC_CONF is deprecated, use PYTORCH_ALLOC_CONF instead (function operator())

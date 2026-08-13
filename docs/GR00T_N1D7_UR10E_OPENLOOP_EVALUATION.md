@@ -1,4 +1,4 @@
-# GR00T N1.7 Open-Loop Evaluation on UR10e
+# GR00T N1.7 Checkpoint2 Open-Loop Evaluation on UR10e
 
 This report documents the open-loop evaluation of a CKA-pruned GR00T N1.7
 checkpoint on one UR10e `pick up the cup` trajectory. The procedure and report
@@ -15,15 +15,10 @@ physical robot.
 
 | Component | Value |
 | --- | --- |
-| Host | `huy-X670E-Steel-Legend` |
 | GPU | NVIDIA GeForce RTX 5060 Ti, 16,311 MiB |
-| Python | 3.12.3 |
-| PyTorch | 2.9.0+cu128 |
-| TorchCodec | 0.8.1 |
-| FFmpeg | 7.1.1, installed in an isolated work directory |
 | Isaac-GR00T revision | `376ba890cff8c9de64d71d982772a9c36185fdd7` |
-| Checkpoint | `duc996/checkpoint1` |
-| Checkpoint revision | `79336b156696d298b04c03903834439af935ad9b` |
+| Checkpoint | `Luke99662244/checkpoint2` |
+| Checkpoint revision | `7c4bdfe13690784aeb59a29f0142c43cd74072c4` |
 | Dataset | `datasets/ur10e-cup-eval-v2` |
 | Trajectory | `0` — `pick up the cup` |
 | Frames | 814 |
@@ -37,8 +32,8 @@ The runtime checkpoint uses the following pruned architecture:
 
 | Module | Original depth | Retained blocks |
 | --- | ---: | ---: |
-| Language backbone | 16 | 12 |
-| Action DiT | 32 | 24 |
+| Language backbone | 16 | 8 |
+| Action DiT | 32 | 16 |
 | VL self-attention | 4 | 4 |
 
 ## 2. Download and Verify the Checkpoint
@@ -47,27 +42,30 @@ The checkpoint was downloaded from the Hugging Face Hub at a pinned revision
 to make the run reproducible:
 
 ```bash
-cd /home/huy/vla.cpp
+cd /path/to/vla.cpp
 
-gr00t-openloop-work/Isaac-GR00T/.venv/bin/hf download \
-    duc996/checkpoint1 \
-    --revision 79336b156696d298b04c03903834439af935ad9b \
-    --local-dir checkpoints/checkpoint1 \
+./gr00t-openloop-work/Isaac-GR00T/.venv/bin/hf download \
+    Luke99662244/checkpoint2 \
+    --revision 7c4bdfe13690784aeb59a29f0142c43cd74072c4 \
+    --exclude "checkpoint-6000/*" "checkpoint_quarantine/*" \
+    --local-dir ./checkpoints/checkpoint2 \
     --max-workers 4
 ```
 
-The two model shards occupy approximately 7.5 GiB in total. Their verified
-SHA-256 checksums are:
+The two inference model shards occupy approximately 8.3 GiB in total. The
+duplicate training checkpoint under `checkpoint-6000/`, including its optimizer
+state, was excluded because it is not required for open-loop inference. The
+verified SHA-256 checksums are:
 
 ```text
-0036dd5e74b48fab5453c512b8aad3d667f421c144dfae1aa66e11a8c3360236  model-00001-of-00002.safetensors
-29e765feb7a47715533d95251bae4c295eb3a02a18c5a283f60d7dba72ba54a8  model-00002-of-00002.safetensors
+c52e9e957f8246b52ec1732a5402c7b10c541dfa9f834312ac9fb54dd301ab2f  model-00001-of-00002.safetensors
+0cb9933bd1d841e00bac2da489a33f9c554d2d82a009939ffce95886515f1fe7  model-00002-of-00002.safetensors
 ```
 
 Verify them again with:
 
 ```bash
-sha256sum checkpoints/checkpoint1/model-*.safetensors
+sha256sum ./checkpoints/checkpoint2/model-*.safetensors
 ```
 
 ## 3. Run the Open-Loop Evaluation
@@ -75,13 +73,12 @@ sha256sum checkpoints/checkpoint1/model-*.safetensors
 The runner invokes NVIDIA's official `gr00t/eval/open_loop_eval.py` evaluator:
 
 ```bash
-ssh workstation
-export PATH="$HOME/.local/bin:$PATH"
-cd /home/huy/vla.cpp
+cd /path/to/vla.cpp
 
 ./eval/run_gr00t_n1d7_ur10e_openloop_remote.sh \
-    --checkpoint /home/huy/vla.cpp/checkpoints/checkpoint1 \
-    --dataset /home/huy/vla.cpp/datasets/ur10e-cup-eval-v2 \
+    --checkpoint ./checkpoints/checkpoint2 \
+    --dataset ./datasets/ur10e-cup-eval-v2 \
+    --output-dir ./openloop-output-checkpoint2 \
     --skip-setup
 ```
 
@@ -89,27 +86,28 @@ The corresponding evaluator command is:
 
 ```bash
 python gr00t/eval/open_loop_eval.py \
-    --dataset-path /home/huy/vla.cpp/datasets/ur10e-cup-eval-v2 \
+    --dataset-path ./datasets/ur10e-cup-eval-v2 \
     --embodiment-tag NEW_EMBODIMENT \
-    --model-path /home/huy/vla.cpp/gr00t-openloop-work/runtime-checkpoint1-pruned \
+    --model-path ./gr00t-openloop-work/runtime-checkpoint2-pruned \
     --traj-ids 0 \
     --execution-horizon 16 \
     --denoising-steps 4 \
     --steps 814 \
-    --save-plot-path /home/huy/vla.cpp/openloop-output/traj_0.jpeg
+    --save-plot-path ./openloop-output-checkpoint2/traj_0.jpeg
 ```
 
 Before evaluating the complete episode, a 32-frame smoke test was run with:
 
 ```bash
 ./eval/run_gr00t_n1d7_ur10e_openloop_remote.sh \
-    --checkpoint /home/huy/vla.cpp/checkpoints/checkpoint1 \
-    --dataset /home/huy/vla.cpp/datasets/ur10e-cup-eval-v2 \
+    --checkpoint ./checkpoints/checkpoint2 \
+    --dataset ./datasets/ur10e-cup-eval-v2 \
+    --output-dir ./openloop-output-checkpoint2 \
     --skip-setup \
     --steps 32
 ```
 
-The smoke test achieved an MSE of `0.0032055245` and an MAE of `0.0369618833`
+The smoke test achieved an MSE of `0.0001872359` and an MAE of `0.0096091190`
 without a CUDA out-of-memory error.
 
 ## 4. Full-Episode Results
@@ -119,18 +117,18 @@ and completed without a traceback, CUDA out-of-memory error, or `NaN` value.
 
 | Metric | Trajectory 0 | Average across all trajectories |
 | --- | ---: | ---: |
-| Unnormalized Action MSE | 0.0069466881 | 0.0069466881 |
-| Unnormalized Action MAE | 0.0463428348 | 0.0463428348 |
+| Unnormalized Action MSE | 0.0007250374 | 0.0007250374 |
+| Unnormalized Action MAE | 0.0101807602 | 0.0101807602 |
 
 Raw evaluator output:
 
 ```text
 INFO:root:Using 814 steps (requested: 814, trajectory length: 814)
-INFO:root:Unnormalized Action MSE across single traj: 0.006946688052266836
-INFO:root:Unnormalized Action MAE across single traj: 0.04634283483028412
-INFO:root:MSE for trajectory 0: 0.006946688052266836, MAE: 0.04634283483028412
-INFO:root:Average MSE across all trajs: 0.006946688052266836
-INFO:root:Average MAE across all trajs: 0.04634283483028412
+INFO:root:Unnormalized Action MSE across single traj: 0.000725037360098213
+INFO:root:Unnormalized Action MAE across single traj: 0.0101807601749897
+INFO:root:MSE for trajectory 0: 0.000725037360098213, MAE: 0.0101807601749897
+INFO:root:Average MSE across all trajs: 0.000725037360098213
+INFO:root:Average MAE across all trajs: 0.0101807601749897
 INFO:root:Done
 ```
 
@@ -139,7 +137,7 @@ INFO:root:Done
 The orange curve is the ground-truth action, the green curve is the predicted
 action, and the red dots mark inference points spaced 16 frames apart.
 
-![Ground-truth and predicted actions for trajectory 0](../openloop-output/traj_0.jpeg)
+![Ground-truth and predicted actions for trajectory 0](../openloop-output-checkpoint2/traj_0.jpeg)
 
 ## 5. Result Interpretation
 
@@ -185,15 +183,15 @@ The source checkpoint was not modified. A symlink-based runtime view is created
 at:
 
 ```text
-gr00t-openloop-work/runtime-checkpoint1-pruned/
+gr00t-openloop-work/runtime-checkpoint2-pruned/
 ```
 
 ## 7. Output Artifacts
 
-Results on the workstation:
+Output directory relative to the repository root:
 
 ```text
-/home/huy/vla.cpp/openloop-output/
+openloop-output-checkpoint2/
 ├── eval.log
 ├── gpu-after.txt
 ├── run-info.txt
@@ -207,19 +205,13 @@ Results on the workstation:
 
 Open the synchronized artifacts directly from this repository:
 
-- [Trajectory 0 visualization](../openloop-output/traj_0.jpeg)
-- [Evaluation log](../openloop-output/eval.log)
-- [Run information](../openloop-output/run-info.txt)
-- [GPU state after evaluation](../openloop-output/gpu-after.txt)
+- [Trajectory 0 visualization](../openloop-output-checkpoint2/traj_0.jpeg)
+- [Evaluation log](../openloop-output-checkpoint2/eval.log)
+- [Run information](../openloop-output-checkpoint2/run-info.txt)
+- [GPU state after evaluation](../openloop-output-checkpoint2/gpu-after.txt)
 
 Extract the metrics with:
 
 ```bash
-grep -E 'MSE|MAE|Average' openloop-output/eval.log
-```
-
-The results were also copied to the controller machine at:
-
-```text
-/home/linh/vla.cpp-openloop-output-checkpoint1/
+grep -E 'MSE|MAE|Average' ./openloop-output-checkpoint2/eval.log
 ```
