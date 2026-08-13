@@ -233,8 +233,14 @@ target_include_directories(vla-cli PRIVATE
 )
 target_link_libraries(vla-cli PRIVATE vla_core)
 
+# Persistent batch runner used by recorded-dataset open-loop evaluation.
+add_executable(vla-openloop
+    src/serving/vla-openloop.cpp
+)
+target_link_libraries(vla-openloop PRIVATE vla_core)
+
 # --- First-party build hygiene (never applied to the vendored llama.cpp subtree) --
-set(VLA_FIRST_PARTY_TARGETS vla_core vla-cli)
+set(VLA_FIRST_PARTY_TARGETS vla_core vla-cli vla-openloop)
 if(VLA_BUILD_SERVERS)
     list(APPEND VLA_FIRST_PARTY_TARGETS vlm_core vla-server vlm-server)
 endif()
