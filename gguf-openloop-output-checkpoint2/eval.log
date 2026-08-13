@@ -1,0 +1,5 @@
+Unnormalized Action MSE across single traj: 0.0009261190437848325
+Unnormalized Action MAE across single traj: 0.011353028116205142
+state_joints vs time (814, 7)
+gt_action_joints vs time (814, 7)
+pred_action_joints vs time (814, 7)

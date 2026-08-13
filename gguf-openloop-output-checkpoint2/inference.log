@@ -1,0 +1,62 @@
+ggml_cuda_init: found 1 CUDA devices (Total VRAM: 15846 MiB):
+  Device 0: NVIDIA GeForce RTX 5060 Ti, compute capability 12.0, VMM: yes, VRAM: 15846 MiB
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+vla: arch = gr00t_n1_7
+vla(gr00tn1d7): vit=Qwen3-VL 1024d×24L×16h (Conv3d patch 16², temporal 2; learned pos 2304 + 2D rope; deepstack@{5,11,17}; merge÷2)  lm=Qwen3-VL 2048d×8L (16q/8kv×128, θ=5e+06)  vlsa=4L×32h×64  dit=AlternateVLDiT 16L×32h×48(inner 1536) attend_text_every_n=2  in_emb=1536  horizon=40 action_dim=132 max_state=132 N_steps=4  embodiment=10  resident=BF16
+vla(gr00tn1d7): backend = CUDA (device 0)
+vla(gr00tn1d7): QKV-fused DiT (self Wqkv / cross Wkv) - 32 fused tensors
+vla(gr00tn1d7): weights resident in 4.13 GiB (BF16) - incl. Qwen3-VL vision tower + deepstack + vl_self_attention; embodiment id 10
+vla-openloop: request 1/51 total=178.8 ms vision=133.7 ms inference=39.1 ms
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+ggml_backend_cuda_graph_compute: CUDA graph warmup complete
+vla-openloop: request 2/51 total=86.5 ms vision=42.5 ms inference=41.4 ms
+vla-openloop: request 3/51 total=67.1 ms vision=36.6 ms inference=28.4 ms
+vla-openloop: request 4/51 total=66.6 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 5/51 total=66.4 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 6/51 total=66.6 ms vision=36.6 ms inference=28.4 ms
+vla-openloop: request 7/51 total=66.6 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 8/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 9/51 total=66.6 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 10/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 11/51 total=66.7 ms vision=36.6 ms inference=28.4 ms
+vla-openloop: request 12/51 total=66.6 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 13/51 total=66.6 ms vision=36.6 ms inference=28.4 ms
+vla-openloop: request 14/51 total=66.6 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 15/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 16/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 17/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 18/51 total=67.0 ms vision=36.7 ms inference=28.4 ms
+vla-openloop: request 19/51 total=66.8 ms vision=36.6 ms inference=28.4 ms
+vla-openloop: request 20/51 total=66.6 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 21/51 total=68.0 ms vision=37.9 ms inference=28.4 ms
+vla-openloop: request 22/51 total=66.8 ms vision=36.6 ms inference=28.4 ms
+vla-openloop: request 23/51 total=66.6 ms vision=36.6 ms inference=28.4 ms
+vla-openloop: request 24/51 total=66.6 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 25/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 26/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 27/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 28/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 29/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 30/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 31/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 32/51 total=66.9 ms vision=36.7 ms inference=28.4 ms
+vla-openloop: request 33/51 total=66.8 ms vision=36.6 ms inference=28.4 ms
+vla-openloop: request 34/51 total=66.6 ms vision=36.6 ms inference=28.4 ms
+vla-openloop: request 35/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 36/51 total=66.9 ms vision=36.6 ms inference=28.4 ms
+vla-openloop: request 37/51 total=66.7 ms vision=36.6 ms inference=28.4 ms
+vla-openloop: request 38/51 total=66.5 ms vision=36.6 ms inference=28.4 ms
+vla-openloop: request 39/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 40/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 41/51 total=66.6 ms vision=36.6 ms inference=28.4 ms
+vla-openloop: request 42/51 total=66.6 ms vision=36.6 ms inference=28.4 ms
+vla-openloop: request 43/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 44/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 45/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 46/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 47/51 total=66.6 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 48/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 49/51 total=66.6 ms vision=36.7 ms inference=28.3 ms
+vla-openloop: request 50/51 total=66.6 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: request 51/51 total=66.5 ms vision=36.6 ms inference=28.3 ms
+vla-openloop: done requests=51 mean_total=69.2 ms actions=/home/huy/vla.cpp/gguf-openloop-checkpoint2/actions.f32 timings=/home/huy/vla.cpp/gguf-openloop-checkpoint2/fixture/timings.csv

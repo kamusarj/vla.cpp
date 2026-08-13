@@ -75,6 +75,7 @@ struct Gr00tN1d7ModelArch : public ModelArchBase {
     int64_t lm_hidden=2048, lm_layers=16, n_q=16, n_kv=8, lm_head_dim=128, lm_inter=6144, vocab=151936, image_token_index=151655;
     int64_t vlsa_layers=4, vlsa_heads=32, vlsa_head_dim=64, vlsa_ff_inner=8192;
     int64_t bb_embed_dim=2048, in_embed_dim=1536, dit_hidden=1536, dit_heads=32, dit_head_dim=48, dit_layers=32, dit_interleave=1, attend_text_every_n=2;
+    std::vector<int64_t> dit_block_indices;
     int64_t action_horizon=40, action_dim=132, max_state_dim=132;
     int64_t num_steps=4, num_buckets=1000, max_embodiments=32, max_seq_len=1024;
     int64_t image_target_size=256;
@@ -99,13 +100,14 @@ struct Gr00tN1d7ModelArch : public ModelArchBase {
     ggml_tensor *po1W=nullptr,*po1b=nullptr,*po2W=nullptr,*po2b=nullptr;
 
     bool                            caches_ready = false;
+    int64_t                         c_grid_h = -1, c_grid_w = -1;
     std::vector<int64_t>            c_grow, c_gcol;
     std::vector<float>              c_rope_cos, c_rope_sin;
     std::vector<float>              c_pos_interp;
     std::vector<std::vector<float>> c_tau, c_tproj;
     std::vector<float>              c_mask; int64_t c_mask_seq = -1;
     gguf_reader                     io;
-    bool build_caches();
+    bool build_caches(int64_t grid_h = -1, int64_t grid_w = -1);
 
     struct MainGraph {
         ggml_context * C = nullptr; ggml_gallocr_t galloc = nullptr; ggml_cgraph * gf = nullptr;
@@ -348,16 +350,17 @@ void interp_pos_embed(const std::vector<float> & table, int64_t num_side, int64_
     }
 }
 
-bool preprocess_image_patches(const ImageView & v, int64_t side, int64_t ps, int64_t tps,
+bool preprocess_image_patches(const ImageView & v, int64_t height, int64_t width, int64_t ps, int64_t tps,
                               const std::vector<int64_t> & row, const std::vector<int64_t> & col, std::vector<float> & out) {
-    if (v.w != (int) side || v.h != (int) side || !v.data) {
-        std::fprintf(stderr, "vla(gr00tn1d7): image view is %dx%d, expected %lldx%lld\n", v.w, v.h, (long long) side, (long long) side); return false;
+    if (v.w != (int) width || v.h != (int) height || !v.data) {
+        std::fprintf(stderr, "vla(gr00tn1d7): image view is %dx%d, expected %lldx%lld\n",
+                     v.w, v.h, (long long) width, (long long) height); return false;
     }
     const int64_t S = (int64_t) row.size(), pf = 3 * tps * ps * ps;
     out.assign((size_t) pf * S, 0.0f);
     auto px = [&](int64_t r, int64_t c, int64_t ch) -> float {
-        if (v.format == PixelFormat::U8) return ((const uint8_t *) v.data)[(r * side + c) * 3 + ch] / 255.0f;
-        return ((const float *) v.data)[(r * side + c) * 3 + ch];
+        if (v.format == PixelFormat::U8) return ((const uint8_t *) v.data)[(r * width + c) * 3 + ch] / 255.0f;
+        return ((const float *) v.data)[(r * width + c) * 3 + ch];
     };
     for (int64_t s = 0; s < S; ++s)
         for (int64_t ch = 0; ch < 3; ++ch)
@@ -381,6 +384,25 @@ void action_sinusoid(int64_t bucket, int64_t dim, int64_t T, std::vector<float> 
     for (int64_t tk = 0; tk < T; ++tk) for (int64_t i = 0; i < half; ++i) { const float emb = t * std::exp(-(float) i * step); out[tk * dim + i] = std::sin(emb); out[tk * dim + half + i] = std::cos(emb); }
 }
 
+bool parse_block_indices(const std::string & raw, int64_t count, std::vector<int64_t> & out) {
+    out.clear();
+    if (raw.empty()) {
+        for (int64_t i = 0; i < count; ++i) out.push_back(i);
+        return true;
+    }
+    const char * p = raw.c_str();
+    while (*p) {
+        char * end = nullptr;
+        const long long value = std::strtoll(p, &end, 10);
+        if (end == p || value < 0 || (!out.empty() && value <= out.back())) return false;
+        out.push_back((int64_t) value);
+        if (*end == '\0') break;
+        if (*end != ',' || end[1] == '\0') return false;
+        p = end + 1;
+    }
+    return (int64_t) out.size() == count;
+}
+
 bool load_config(const gguf_reader & g, Gr00tN1d7ModelArch & m, Config & cfg) {
     auto U = [&](const char * k, int64_t & dst) { if (g.has(k)) dst = (int64_t) g.u32(k); };
     auto F = [&](const char * k, float & dst)   { if (g.has(k)) dst = g.f32(k); };
@@ -395,6 +417,12 @@ bool load_config(const gguf_reader & g, Gr00tN1d7ModelArch & m, Config & cfg) {
     U(fk("backbone_embedding_dim"), m.bb_embed_dim); U(fk("input_embedding_dim"), m.in_embed_dim);
     U(fk("dit_hidden"), m.dit_hidden); U(fk("dit_heads"), m.dit_heads); U(fk("dit_head_dim"), m.dit_head_dim); U(fk("dit_layers"), m.dit_layers); U(fk("dit_interleave"), m.dit_interleave);
     U(fk("attend_text_every_n_blocks"), m.attend_text_every_n);
+    const std::string dit_block_indices = g.str(fk("dit_block_indices"));
+    if (!parse_block_indices(dit_block_indices, m.dit_layers, m.dit_block_indices)) {
+        std::fprintf(stderr, "vla(gr00tn1d7): invalid dit_block_indices '%s' for %lld DiT layers\n",
+                     dit_block_indices.c_str(), (long long) m.dit_layers);
+        return false;
+    }
     U(fk("action_horizon"), m.action_horizon); U(fk("action_dim"), m.action_dim); U(fk("max_state_dim"), m.max_state_dim);
     U(fk("num_inference_timesteps"), m.num_steps); U(fk("num_timestep_buckets"), m.num_buckets); U(fk("max_num_embodiments"), m.max_embodiments); U(fk("max_seq_len"), m.max_seq_len);
     U(fk("image_target_size"), m.image_target_size);
@@ -573,7 +601,8 @@ std::unique_ptr<ModelArchBase> gr00t_n1_7_create(const std::string& mmproj_path,
             const std::string pre = "aex.dit." + std::to_string((long long) i) + ".";
             const std::string qn=pre+"attn_q.weight", kn=pre+"attn_k.weight", vn=pre+"attn_v.weight";
             const std::string qb=pre+"attn_q.bias",   kb=pre+"attn_k.bias",   vb=pre+"attn_v.bias";
-            if (m->dit_interleave && (i % 2 == 1)) {
+            const int64_t block_index = m->dit_block_indices[i];
+            if (m->dit_interleave && (block_index % 2 == 1)) {
                 const std::string ow=pre+"attn_qkv.fused.w", ob=pre+"attn_qkv.fused.b";
                 w.Wqkv=mk_fused(ow.c_str(), {qn.c_str(),kn.c_str(),vn.c_str()}, m->matmul_type);
                 w.bqkv=mk_fused(ob.c_str(), {qb.c_str(),kb.c_str(),vb.c_str()}, GGML_TYPE_F32);
@@ -630,23 +659,28 @@ std::unique_ptr<ModelArchBase> gr00t_n1_7_create(const std::string& mmproj_path,
     return m;
 }
 
-bool Gr00tN1d7ModelArch::build_caches() {
-    if (caches_ready) return true;
-    const int64_t side = image_target_size, ps = patch_size, m2 = spatial_merge;
-    const int64_t grid = side / ps;
+bool Gr00tN1d7ModelArch::build_caches(int64_t grid_h, int64_t grid_w) {
+    const int64_t ps = patch_size, m2 = spatial_merge;
+    if (grid_h < 0) grid_h = image_target_size / ps;
+    if (grid_w < 0) grid_w = image_target_size / ps;
+    if (grid_h <= 0 || grid_w <= 0 || grid_h % m2 != 0 || grid_w % m2 != 0) {
+        std::fprintf(stderr, "vla(gr00tn1d7): invalid vision patch grid %lldx%lld (merge=%lld)\n",
+                     (long long) grid_w, (long long) grid_h, (long long) m2); return false;
+    }
+    if (caches_ready && c_grid_h == grid_h && c_grid_w == grid_w) return true;
     const int64_t hd_vit = vit_hidden / vit_heads;
     const int64_t num_side = (int64_t) std::lround(std::sqrt((double) vit_num_pos));
     const int64_t E = in_embed_dim, AH = action_horizon;
 
-    merge_block_coords(grid, grid, m2, c_grow, c_gcol);
+    merge_block_coords(grid_h, grid_w, m2, c_grow, c_gcol);
     vit_rope_tables(c_grow, c_gcol, hd_vit, (double) vit_rope_base, c_rope_cos, c_rope_sin);
 
-    if (!io.open(gguf_path)) { std::fprintf(stderr, "vla(gr00tn1d7): build_caches: io.open(%s) failed\n", gguf_path.c_str()); return false; }
+    if (!io.gctx && !io.open(gguf_path)) { std::fprintf(stderr, "vla(gr00tn1d7): build_caches: io.open(%s) failed\n", gguf_path.c_str()); return false; }
     std::vector<float> pos_table = io.read_f32("vit.pos_embd");
     if (pos_table.empty() || (int64_t) pos_table.size() != vit_num_pos * vit_hidden) {
         std::fprintf(stderr, "vla(gr00tn1d7): build_caches: vit.pos_embd unreadable\n"); return false;
     }
-    interp_pos_embed(pos_table, num_side, vit_hidden, c_grow, c_gcol, grid, grid, c_pos_interp);
+    interp_pos_embed(pos_table, num_side, vit_hidden, c_grow, c_gcol, grid_h, grid_w, c_pos_interp);
 
     c_tau.assign((size_t) num_steps, {}); c_tproj.assign((size_t) num_steps, {});
     for (int64_t s = 0; s < num_steps; ++s) {
@@ -654,7 +688,7 @@ bool Gr00tN1d7ModelArch::build_caches() {
         action_sinusoid(bucket, E, AH, c_tau[(size_t) s]);
         timesteps_proj(bucket, c_tproj[(size_t) s]);
     }
-    caches_ready = true;
+    c_grid_h = grid_h; c_grid_w = grid_w; caches_ready = true;
     return true;
 }
 
@@ -663,16 +697,28 @@ std::vector<float> Gr00tN1d7ModelArch::predict(const Inputs& in) {
     stats = Stats{};
 
     const int64_t H = lm_hidden, E = in_embed_dim;
-    const int64_t side = image_target_size;
     const int64_t ps = patch_size, m2 = spatial_merge;
-    const int64_t grid = side / ps;
-    const int64_t n_patches = grid * grid;
-    const int64_t K = (grid / m2) * (grid / m2);
+    int64_t image_h = image_target_size, image_w = image_target_size;
+    if (in.images && in.n_images > 0) {
+        image_h = in.images[0].h; image_w = in.images[0].w;
+        for (int v = 0; v < in.n_images; ++v) {
+            if (!in.images[v].data || in.images[v].h != image_h || in.images[v].w != image_w) {
+                std::fprintf(stderr, "vla(gr00tn1d7): all image views must have one common non-empty shape\n"); return {};
+            }
+        }
+        if (image_h % (ps * m2) != 0 || image_w % (ps * m2) != 0) {
+            std::fprintf(stderr, "vla(gr00tn1d7): image shape %lldx%lld must be divisible by patch*merge=%lld\n",
+                         (long long) image_w, (long long) image_h, (long long) (ps * m2)); return {};
+        }
+    }
+    const int64_t grid_h = image_h / ps, grid_w = image_w / ps;
+    if (!build_caches(grid_h, grid_w)) { std::fprintf(stderr, "vla(gr00tn1d7): caches not ready\n"); return {}; }
+    const int64_t n_patches = grid_h * grid_w;
+    const int64_t K = (grid_h / m2) * (grid_w / m2);
     const int64_t hd_vit = vit_hidden / vit_heads;
     const int64_t AD = action_dim, AH = action_horizon, Nsa = 1 + AH;
     const bool    do_dump = (std::getenv("VLA_GR00T_N17_DUMP") != nullptr);
 
-    if (!caches_ready) { std::fprintf(stderr, "vla(gr00tn1d7): caches not ready\n"); return {}; }
     const std::vector<int64_t> & grow = c_grow, & gcol = c_gcol;
     const std::vector<float> & rope_cos = c_rope_cos, & rope_sin = c_rope_sin, & pos_interp = c_pos_interp;
 
@@ -717,7 +763,7 @@ std::vector<float> Gr00tN1d7ModelArch::predict(const Inputs& in) {
         std::vector<float> patches;
         bool vok = true;
         for (int64_t v = 0; v < n_views && vok; ++v) {
-            if (!preprocess_image_patches(in.images[v], side, ps, temporal_patch, grow, gcol, patches)) { vok = false; break; }
+            if (!preprocess_image_patches(in.images[v], image_h, image_w, ps, temporal_patch, grow, gcol, patches)) { vok = false; break; }
 
             ggml_backend_tensor_set(t_pos, pos_interp.data(), 0, ggml_nbytes(t_pos));
             ggml_backend_tensor_set(t_cos, rope_cos.data(), 0, ggml_nbytes(t_cos));
@@ -845,8 +891,9 @@ std::vector<float> Gr00tN1d7ModelArch::predict(const Inputs& in) {
 
     std::vector<ggml_tensor *> Kc(dit_layers, nullptr), Vc(dit_layers, nullptr);
     for (int64_t i = 0; i < dit_layers; ++i) {
-        if (dit_interleave && (i % 2 == 1)) continue;
-        ggml_tensor * enc = (i % every2 == 0) ? vl_txt : vl_img;
+        const int64_t block_index = dit_block_indices[i];
+        if (dit_interleave && (block_index % 2 == 1)) continue;
+        ggml_tensor * enc = (block_index % every2 == 0) ? vl_txt : vl_img;
         dit_kv(C, *this, dit[i], enc, &Kc[i], &Vc[i]);
     }
 
@@ -859,10 +906,11 @@ std::vector<float> Gr00tN1d7ModelArch::predict(const Inputs& in) {
         ggml_tensor * sa = ggml_concat(C, state_features, af, 1);
         ggml_tensor * hh = sa;
         for (int64_t i = 0; i < dit_layers; ++i) {
+            const int64_t block_index = dit_block_indices[i];
             ggml_tensor * enc;
-            if (dit_interleave && (i % 2 == 1)) enc = nullptr;
-            else if (i % every2 == 0)           enc = vl_txt;
-            else                                enc = vl_img;
+            if (dit_interleave && (block_index % 2 == 1)) enc = nullptr;
+            else if (block_index % every2 == 0)           enc = vl_txt;
+            else                                           enc = vl_img;
             hh = build_dit_block(C, *this, dit[i], hh, temb, enc, Kc[i], Vc[i]);
         }
         ggml_tensor * po = ggml_add(C, ggml_mul_mat(C, po1W, ggml_silu(C, temb)), po1b);
@@ -899,8 +947,8 @@ std::vector<float> Gr00tN1d7ModelArch::predict(const Inputs& in) {
     ggml_backend_tensor_set(t_embeds, inputs_embeds.data(), 0, ggml_nbytes(t_embeds));
     {
 
-        const int64_t llm_grid_h = image_target_size / patch_size / spatial_merge;
-        const int64_t llm_grid_w = llm_grid_h;
+        const int64_t llm_grid_h = grid_h / spatial_merge;
+        const int64_t llm_grid_w = grid_w / spatial_merge;
 
         std::vector<int32_t> pp((size_t) 4 * SEQ, 0);
         int64_t st = 0, st_idx = 0;

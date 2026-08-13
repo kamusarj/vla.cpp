@@ -18,7 +18,8 @@
 // client, so language is passed as token ids here.
 //
 //   vla-cli [--mmproj m.gguf] --ckpt c.gguf --image img.jpg [--image img2.jpg]
-//           --tokens id,id,... [--state f,f,...] [--pretty]
+//           --tokens id,id,... [--state f,f,...] [--noise-file noise.f32]
+//           [--action-file action.f32] [--pretty]
 
 #include "model.h"
 
@@ -92,15 +93,37 @@ bool load_image(const char * path, std::vector<uint8_t> & buf, int & w, int & h)
     return true;
 }
 
+bool load_f32_file(const char * path, std::vector<float> & out) {
+    FILE * fp = std::fopen(path, "rb");
+    if (!fp) { std::fprintf(stderr, "vla-cli: cannot open float file %s\n", path); return false; }
+    if (std::fseek(fp, 0, SEEK_END) != 0) { std::fclose(fp); return false; }
+    const long bytes = std::ftell(fp);
+    if (bytes < 0 || bytes % (long) sizeof(float) != 0 || std::fseek(fp, 0, SEEK_SET) != 0) {
+        std::fprintf(stderr, "vla-cli: %s is not a raw float32 file\n", path);
+        std::fclose(fp); return false;
+    }
+    out.resize((size_t) bytes / sizeof(float));
+    const bool ok = out.empty() || std::fread(out.data(), sizeof(float), out.size(), fp) == out.size();
+    std::fclose(fp);
+    if (!ok) { std::fprintf(stderr, "vla-cli: cannot read %s\n", path); return false; }
+    for (float value : out) if (!std::isfinite(value)) {
+        std::fprintf(stderr, "vla-cli: non-finite value in %s\n", path); return false;
+    }
+    return true;
+}
+
 void usage(const char * prog) {
     std::fprintf(stderr,
         "usage: %s [--mmproj m.gguf] --ckpt c.gguf --image img.jpg [--image ...]\n"
-        "          --tokens id,id,... [--state f,f,...] [--pretty]\n"
+        "          --tokens id,id,... [--state f,f,...] [--noise-file noise.f32]\n"
+        "          [--action-file action.f32] [--pretty]\n"
         "  --mmproj   vision-tower GGUF (SmolVLA/pi0/pi0.5); omit for baked-vision archs\n"
         "  --ckpt     model checkpoint GGUF\n"
         "  --image    image file, repeat for multi-view (decoded via stb_image)\n"
         "  --tokens   language token ids, comma-separated (tokenize in the client)\n"
         "  --state    proprioception floats, comma-separated (default zeros)\n"
+        "  --noise-file raw float32 initial action noise (for deterministic parity tests)\n"
+        "  --action-file write raw float32 normalized actions instead of printing every value\n"
         "  --pretty   print one action row (max_action_dim values) per line\n",
         prog);
 }
@@ -108,7 +131,7 @@ void usage(const char * prog) {
 }  // namespace
 
 int main(int argc, char ** argv) {
-    std::string mmproj, ckpt, tokens_s, state_s;
+    std::string mmproj, ckpt, tokens_s, state_s, noise_path, action_path;
     std::vector<std::string> image_paths;
     bool pretty = false;
 
@@ -123,6 +146,8 @@ int main(int argc, char ** argv) {
         else if (a == "--image")   image_paths.push_back(need("--image"));
         else if (a == "--tokens")  tokens_s = need("--tokens");
         else if (a == "--state")   state_s = need("--state");
+        else if (a == "--noise-file") noise_path = need("--noise-file");
+        else if (a == "--action-file") action_path = need("--action-file");
         else if (a == "--pretty")  pretty = true;
         else if (a == "-h" || a == "--help") { usage(argv[0]); return 0; }
         else { std::fprintf(stderr, "vla-cli: unknown argument %s\n", a.c_str()); usage(argv[0]); return 1; }
@@ -138,6 +163,16 @@ int main(int argc, char ** argv) {
     Model * m = model_load(mmproj, ckpt, "");
     if (!m) { std::fprintf(stderr, "vla-cli: model_load failed\n"); return 1; }
     const Config & cfg = model_config(m);
+
+    std::vector<float> noise;
+    if (!noise_path.empty()) {
+        if (!load_f32_file(noise_path.c_str(), noise)) { model_free(m); return 1; }
+        const size_t expected = (size_t) cfg.n_suffix * (size_t) cfg.max_action_dim;
+        if (noise.size() != expected) {
+            std::fprintf(stderr, "vla-cli: --noise-file has %zu floats, model expects %zu\n", noise.size(), expected);
+            model_free(m); return 1;
+        }
+    }
 
     if (!state.empty() && (int64_t) state.size() != cfg.max_state_dim)
         std::fprintf(stderr, "vla-cli: --state has %zu values, model expects %lld; padding or truncating\n",
@@ -158,13 +193,22 @@ int main(int argc, char ** argv) {
     in.lang_tokens = lang.data();
     in.n_lang      = (int) lang.size();
     in.state       = state.data();
-    in.noise       = nullptr;  // predict() samples N(0,1) when omitted
+    in.noise       = noise.empty() ? nullptr : noise.data();
 
     std::vector<float> act = predict(m, in);
     if (act.empty()) { std::fprintf(stderr, "vla-cli: predict failed\n"); model_free(m); return 2; }
 
     const int64_t cols = cfg.max_action_dim > 0 ? cfg.max_action_dim : 1;
-    if (pretty) {
+    if (!action_path.empty()) {
+        FILE * fp = std::fopen(action_path.c_str(), "wb");
+        if (!fp || std::fwrite(act.data(), sizeof(float), act.size(), fp) != act.size()) {
+            std::fprintf(stderr, "vla-cli: cannot write actions to %s\n", action_path.c_str());
+            if (fp) std::fclose(fp);
+            model_free(m); return 1;
+        }
+        std::fclose(fp);
+        std::printf("action_len=%zu action_file=%s\n", act.size(), action_path.c_str());
+    } else if (pretty) {
         for (size_t i = 0; i < act.size(); ++i)
             std::printf("%.6g%c", act[i], ((int64_t) (i + 1) % cols == 0) ? '\n' : ' ');
     } else {

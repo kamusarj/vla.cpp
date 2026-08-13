@@ -80,6 +80,41 @@ def _load_sharded(ckpt: Path) -> dict[str, torch.Tensor]:
                 out[k] = f.get_tensor(k)
     return out
 
+def _read_sidecar(ckpt: Path, name: str) -> str:
+    """Read processor sidecars from either checkpoint layout used by GR00T."""
+    for path in (ckpt / name, ckpt / "processor" / name):
+        if path.exists():
+            return path.read_text()
+    return "{}"
+
+def _block_indices(cfg: dict, module: str, count: int, configured_depth: int) -> list[int]:
+    """Return original block indices for a possibly CKA-pruned module."""
+    manifest = cfg.get("cka_pruning_manifest")
+    entry = manifest.get("modules", {}).get(module) if isinstance(manifest, dict) else None
+    if entry is None:
+        if count != configured_depth:
+            raise SystemExit(
+                f"checkpoint has {count} {module} blocks but config declares {configured_depth}; "
+                "a cka_pruning_manifest is required for pruned checkpoints"
+            )
+        return list(range(count))
+
+    if not isinstance(entry, dict):
+        raise SystemExit(f"cka_pruning_manifest modules.{module} must be an object")
+    indices = entry.get("keep_indices")
+    original_depth = int(entry.get("original_depth", configured_depth))
+    if not isinstance(indices, list) or any(type(i) is not int for i in indices):
+        raise SystemExit(f"cka_pruning_manifest modules.{module}.keep_indices must be an integer list")
+    if len(indices) != count:
+        raise SystemExit(
+            f"checkpoint has {count} {module} blocks but its pruning manifest lists {len(indices)}"
+        )
+    if indices != sorted(set(indices)) or any(i < 0 or i >= original_depth for i in indices):
+        raise SystemExit(
+            f"invalid modules.{module}.keep_indices for original_depth={original_depth}: {indices}"
+        )
+    return indices
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--ckpt", type=Path, required=True, help="GR00T-N1.7-3B snapshot dir")
@@ -95,8 +130,7 @@ def main() -> int:
     cfg_json = json.loads(cfg_path.read_text())
     if str(cfg_json.get("model_type", "")) != "Gr00tN1d7":
         raise SystemExit(f"config.json model_type is {cfg_json.get('model_type')!r}, expected 'Gr00tN1d7'")
-    if int(cfg_json.get("select_layer", LM_LAYERS_USED)) != LM_LAYERS_USED:
-        raise SystemExit(f"select_layer = {cfg_json.get('select_layer')}, expected {LM_LAYERS_USED}")
+    configured_lm_layers = int(cfg_json.get("select_layer", LM_LAYERS_USED))
     AH["action_horizon"] = int(cfg_json.get("action_horizon", AH["action_horizon"]))
     AH["action_dim"] = int(cfg_json.get("max_action_dim", AH["action_dim"]))
     AH["max_state_dim"] = int(cfg_json.get("max_state_dim", AH["max_state_dim"]))
@@ -108,13 +142,13 @@ def main() -> int:
     AH["input_embedding_dim"] = int(cfg_json.get("input_embedding_dim", AH["input_embedding_dim"]))
     AH["backbone_embedding_dim"] = int(cfg_json.get("backbone_embedding_dim", AH["backbone_embedding_dim"]))
     dmc = cfg_json.get("diffusion_model_cfg", {})
-    AH["dit_layers"] = int(dmc.get("num_layers", AH["dit_layers"]))
+    configured_dit_layers = int(dmc.get("num_layers", AH["dit_layers"]))
     AH["dit_heads"] = int(dmc.get("num_attention_heads", AH["dit_heads"]))
     AH["dit_head_dim"] = int(dmc.get("attention_head_dim", AH["dit_head_dim"]))
     AH["dit_hidden"] = AH["dit_heads"] * AH["dit_head_dim"]
     AH["dit_interleave"] = int(bool(dmc.get("interleave_self_attention", True)))
     vsac = cfg_json.get("vl_self_attention_cfg", {})
-    AH["vlsa_layers"] = int(vsac.get("num_layers", AH["vlsa_layers"]))
+    configured_vlsa_layers = int(vsac.get("num_layers", AH["vlsa_layers"]))
     AH["vlsa_heads"] = int(vsac.get("num_attention_heads", AH["vlsa_heads"]))
     AH["vlsa_head_dim"] = int(vsac.get("attention_head_dim", AH["vlsa_head_dim"]))
     SHORTEST_EDGE = int(cfg_json.get("shortest_image_edge", 256) or 256)
@@ -144,10 +178,13 @@ def main() -> int:
     n_vsa = _maxlayer("action_head.vl_self_attention.transformer_blocks.")
     n_ds  = _maxlayer(VS + "deepstack_merger_list.")
     if n_vit != VIT["vit_layers"]:   raise SystemExit(f"checkpoint has {n_vit} Qwen3-VL ViT layers, expected {VIT['vit_layers']}")
-    if n_lm  != LM_LAYERS_USED:      raise SystemExit(f"checkpoint has {n_lm} Qwen3-VL text layers, expected {LM_LAYERS_USED}")
-    if n_dit != AH["dit_layers"]:    raise SystemExit(f"checkpoint has {n_dit} DiT blocks, expected {AH['dit_layers']}")
-    if n_vsa != AH["vlsa_layers"]:   raise SystemExit(f"checkpoint has {n_vsa} vl_self_attention blocks, expected {AH['vlsa_layers']}")
     if n_ds  != len(DEEPSTACK_IDXS): raise SystemExit(f"checkpoint has {n_ds} deepstack mergers, expected {len(DEEPSTACK_IDXS)}")
+
+    lm_block_indices = _block_indices(cfg_json, "backbone_language", n_lm, configured_lm_layers)
+    dit_block_indices = _block_indices(cfg_json, "action_dit", n_dit, configured_dit_layers)
+    vlsa_block_indices = _block_indices(cfg_json, "vl_self_attention", n_vsa, configured_vlsa_layers)
+    AH["dit_layers"] = n_dit
+    AH["vlsa_layers"] = n_vsa
 
     vocab = int(W[LM + "embed_tokens.weight"].shape[0])
     pe_w = W[VS + "patch_embed.proj.weight"]
@@ -160,22 +197,35 @@ def main() -> int:
     assert W[VS + "deepstack_merger_list.0.norm.weight"].shape == (c_merged,)
     vlsa_ff_inner = 4 * AH["backbone_embedding_dim"]
     assert W["action_head.vl_self_attention.transformer_blocks.0.ff.net.0.proj.weight"].shape == (vlsa_ff_inner, AH["backbone_embedding_dim"])
+    for i, original_index in enumerate(dit_block_indices):
+        is_self_attention = bool(AH["dit_interleave"] and original_index % 2 == 1)
+        kv_input_dim = AH["dit_hidden"] if is_self_attention else AH["backbone_embedding_dim"]
+        for projection in ("k", "v"):
+            name = f"action_head.model.transformer_blocks.{i}.attn1.to_{projection}.weight"
+            expected = (AH["dit_hidden"], kv_input_dim)
+            if tuple(W[name].shape) != expected:
+                raise SystemExit(
+                    f"{name} has shape {tuple(W[name].shape)}, expected {expected} for original "
+                    f"DiT block {original_index} ({'self' if is_self_attention else 'cross'} attention)"
+                )
 
-    statistics_json = (ckpt / "statistics.json").read_text() if (ckpt / "statistics.json").exists() else "{}"
-    processor_json = (ckpt / "processor_config.json").read_text() if (ckpt / "processor_config.json").exists() else "{}"
-    embodiment_id_json = (ckpt / "embodiment_id.json").read_text() if (ckpt / "embodiment_id.json").exists() else "{}"
+    statistics_json = _read_sidecar(ckpt, "statistics.json")
+    processor_json = _read_sidecar(ckpt, "processor_config.json")
+    embodiment_id_json = _read_sidecar(ckpt, "embodiment_id.json")
     proc_kwargs = json.loads(processor_json).get("processor_kwargs", {}) if processor_json != "{}" else {}
     USE_PERCENTILES = bool(proc_kwargs.get("use_percentiles", True))
     CLIP_OUTLIERS = bool(proc_kwargs.get("clip_outliers", True))
 
     print(f"resolved cfg: vit=Qwen3-VL {VIT['vit_hidden']}d×{VIT['vit_layers']}L×{VIT['vit_heads']}h (Conv3d patch {VIT['patch_size']}², temporal {VIT['temporal_patch_size']}, "
           f"learned pos {VIT['vit_num_position_embeddings']}=48² + 2D rope; deepstack@{DEEPSTACK_IDXS}; merger LN={VIT['vit_hidden']} pre-merge / deepstack LN={c_merged} post-merge ⇒ "
-          f"merge÷{VIT['spatial_merge_size']})  lm=Qwen3-VL {QWEN3['lm_hidden']}d×{LM_LAYERS_USED}L ({QWEN3['lm_q_heads']}q/{QWEN3['lm_kv_heads']}kv×{QWEN3['lm_head_dim']}, θ={QWEN3['lm_rope_theta']:g})  "
+          f"merge÷{VIT['spatial_merge_size']})  lm=Qwen3-VL {QWEN3['lm_hidden']}d×{n_lm}L ({QWEN3['lm_q_heads']}q/{QWEN3['lm_kv_heads']}kv×{QWEN3['lm_head_dim']}, θ={QWEN3['lm_rope_theta']:g})  "
           f"vocab={vocab} img_tok={IMAGE_TOKEN_INDEX}  vlsa={AH['vlsa_layers']}L×{AH['vlsa_heads']}h×{AH['vlsa_head_dim']} ff{vlsa_ff_inner}  "
           f"dit=AlternateVLDiT {AH['dit_layers']}L×{AH['dit_heads']}h×{AH['dit_head_dim']}(inner {AH['dit_hidden']}) attend_text_every_n={AH['attend_text_every_n_blocks']}  "
           f"in_emb={AH['input_embedding_dim']}  horizon={AH['action_horizon']} action_dim={AH['action_dim']} max_state={AH['max_state_dim']}  N_steps={AH['num_inference_timesteps']}  "
           f"embodiments={AH['max_num_embodiments']}  relative={USE_RELATIVE_ACTION} percentiles={USE_PERCENTILES} clip={CLIP_OUTLIERS} sincos={APPLY_SINCOS_STATE}  "
-          f"img: shortest_edge={SHORTEST_EDGE} crop_frac={CROP_FRACTION} crop_size={ICS} target_size={ITS}  stats={len(statistics_json)}c proc={len(processor_json)}c emb_id={embodiment_id_json.strip()}")
+          f"img: shortest_edge={SHORTEST_EDGE} crop_frac={CROP_FRACTION} crop_size={ICS} target_size={ITS}  "
+          f"blocks: lm={lm_block_indices} dit={dit_block_indices} vlsa={vlsa_block_indices}  "
+          f"stats={len(statistics_json)}c proc={len(processor_json)}c emb_id={embodiment_id_json.strip()}")
 
     out.parent.mkdir(parents=True, exist_ok=True)
     print(f"writing {out}")
@@ -188,7 +238,7 @@ def main() -> int:
         n_img_tokens_per_view=64,
         shortest_image_edge=SHORTEST_EDGE, image_crop_size=int(ICS[0]), image_target_size=int(ITS[0]),
         deepstack_idx_0=DEEPSTACK_IDXS[0], deepstack_idx_1=DEEPSTACK_IDXS[1], deepstack_idx_2=DEEPSTACK_IDXS[2],
-        lm_hidden=QWEN3["lm_hidden"], lm_layers_used=LM_LAYERS_USED, lm_q_heads=QWEN3["lm_q_heads"],
+        lm_hidden=QWEN3["lm_hidden"], lm_layers_used=n_lm, lm_q_heads=QWEN3["lm_q_heads"],
         lm_kv_heads=QWEN3["lm_kv_heads"], lm_head_dim=QWEN3["lm_head_dim"], lm_inter=QWEN3["lm_inter"],
         vocab_size=vocab, image_token_index=IMAGE_TOKEN_INDEX,
         vlsa_layers=AH["vlsa_layers"], vlsa_heads=AH["vlsa_heads"], vlsa_head_dim=AH["vlsa_head_dim"], vlsa_ff_inner=vlsa_ff_inner,
@@ -216,6 +266,11 @@ def main() -> int:
     writer.add_string(KV("embodiment_id_mapping"), embodiment_id_json.strip())
     writer.add_string(KV("statistics_json"), statistics_json)
     writer.add_string(KV("processor_config_json"), processor_json)
+    writer.add_string(KV("lm_block_indices"), ",".join(map(str, lm_block_indices)))
+    writer.add_string(KV("dit_block_indices"), ",".join(map(str, dit_block_indices)))
+    writer.add_string(KV("vlsa_block_indices"), ",".join(map(str, vlsa_block_indices)))
+    if cfg_json.get("cka_pruning_manifest") is not None:
+        writer.add_string(KV("cka_pruning_manifest"), json.dumps(cfg_json["cka_pruning_manifest"], separators=(",", ":")))
 
     g = lambda name: W[name]
 
@@ -242,7 +297,7 @@ def main() -> int:
 
     _add(writer, "token_embd.weight",      g(LM + "embed_tokens.weight"))
     _add(writer, "vlm.output_norm.weight", g(LM + "norm.weight"))
-    for i in range(LM_LAYERS_USED):
+    for i in range(n_lm):
         LL = f"{LM}layers.{i}."
         _add(writer, f"vlm.blk.{i}.attn_norm.weight", g(LL + "input_layernorm.weight"))
         for q in ("q", "k", "v"):

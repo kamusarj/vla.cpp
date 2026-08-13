@@ -1,8 +1,8 @@
 # GR00T N1.7 Checkpoint2 Open-Loop Evaluation on UR10e
 
-This report documents the open-loop evaluation of a CKA-pruned GR00T N1.7
-checkpoint on one UR10e `pick up the cup` trajectory. The procedure and report
-structure follow
+This report documents the PyTorch and vla.cpp GGUF open-loop evaluations of a
+CKA-pruned GR00T N1.7 checkpoint on one UR10e `pick up the cup` trajectory. The
+procedure and report structure follow
 [Step 4: Open Loop Evaluation in NVIDIA Isaac-GR00T](https://github.com/NVIDIA/Isaac-GR00T/blob/main/getting_started/finetune_new_embodiment.md#step-4-open-loop-evaluation).
 
 Open-loop evaluation uses recorded data. At each inference point, the model
@@ -19,6 +19,8 @@ physical robot.
 | Isaac-GR00T revision | `376ba890cff8c9de64d71d982772a9c36185fdd7` |
 | Checkpoint | `Luke99662244/checkpoint2` |
 | Checkpoint revision | `7c4bdfe13690784aeb59a29f0142c43cd74072c4` |
+| GGUF | `checkpoints/checkpoint2/checkpoint2-f32.gguf` |
+| GGUF SHA-256 | `c37d3563df050d8a2307740e29a078968e17d4313b8490ed29593eb5ee3999be` |
 | Dataset | `datasets/ur10e-cup-eval-v2` |
 | Trajectory | `0` — `pick up the cup` |
 | Frames | 814 |
@@ -110,6 +112,37 @@ Before evaluating the complete episode, a 32-frame smoke test was run with:
 The smoke test achieved an MSE of `0.0001872359` and an MAE of `0.0096091190`
 without a CUDA out-of-memory error.
 
+### Run the GGUF directly with vla.cpp
+
+The GGUF evaluator uses the same checkpoint processor and LeRobot trajectory
+loader as the official evaluator. Python prepares processor-exact inputs and
+decodes the action units; all model inference is performed by the persistent
+`vla-openloop` C++ process:
+
+```bash
+python scripts/eval_gr00t_n1_7_gguf_openloop.py prepare \
+    --checkpoint ./gr00t-openloop-work/runtime-checkpoint2-pruned \
+    --dataset ./datasets/ur10e-cup-eval-v2 \
+    --fixture ./gguf-openloop-checkpoint2/fixture \
+    --steps 814 --execution-horizon 16 --seed 20260813
+
+VLA_GR00T_GRAPH_CACHE=1 \
+VLA_GR00T_BF16_WEIGHTS=1 \
+VLA_GR00T_EMBODIMENT=new_embodiment \
+./build-gguf-cuda/vla-openloop \
+    --ckpt ./checkpoints/checkpoint2/checkpoint2-f32.gguf \
+    --fixture ./gguf-openloop-checkpoint2/fixture \
+    --actions ./gguf-openloop-checkpoint2/actions.f32
+
+python scripts/eval_gr00t_n1_7_gguf_openloop.py score \
+    --checkpoint ./gr00t-openloop-work/runtime-checkpoint2-pruned \
+    --dataset ./datasets/ur10e-cup-eval-v2 \
+    --fixture ./gguf-openloop-checkpoint2/fixture \
+    --actions ./gguf-openloop-checkpoint2/actions.f32 \
+    --output ./gguf-openloop-output-checkpoint2 \
+    --gguf ./checkpoints/checkpoint2/checkpoint2-f32.gguf
+```
+
 ## 4. Full-Episode Results
 
 The evaluator processed all 814 frames, performed inference every 16 frames,
@@ -132,12 +165,38 @@ INFO:root:Average MAE across all trajs: 0.0101807601749897
 INFO:root:Done
 ```
 
+### vla.cpp GGUF result
+
+The GGUF run used deterministic BF16 noise with seed `20260813`. It processed
+the same 814 frames and 51 inference points without a runtime error or
+non-finite action value.
+
+| Metric | Trajectory 0 |
+| --- | ---: |
+| Unnormalized Action MSE | 0.0009261190 |
+| Unnormalized Action MAE | 0.0113530281 |
+| Mean latency, including warm-up | 69.21 ms/request |
+| Median latency | 66.56 ms/request |
+| Median vision time | 36.59 ms/request |
+| Median action inference time | 28.34 ms/request |
+
+The earlier PyTorch evaluator run sampled noise without a fixed seed, so its
+trajectory MSE/MAE should not be treated as a bit-for-bit comparison with the
+deterministic GGUF run. In the fixed-noise step-0 parity check, the first request
+from this batch is byte-identical to the previously verified vla.cpp CUDA
+output; that output had cosine similarity `0.99999487` to PyTorch over the seven
+active action dimensions.
+
 ### Visualization: Ground-Truth and Predicted Actions
 
 The orange curve is the ground-truth action, the green curve is the predicted
 action, and the red dots mark inference points spaced 16 frames apart.
 
 ![Ground-truth and predicted actions for trajectory 0](../openloop-output-checkpoint2/traj_0.jpeg)
+
+GGUF prediction:
+
+![Ground-truth and GGUF-predicted actions for trajectory 0](../gguf-openloop-output-checkpoint2/traj_0.jpeg)
 
 ## 5. Result Interpretation
 
@@ -198,6 +257,18 @@ openloop-output-checkpoint2/
 └── traj_0.jpeg
 ```
 
+The synchronized GGUF artifacts are stored separately:
+
+```text
+gguf-openloop-output-checkpoint2/
+├── eval.log
+├── inference.log
+├── metrics.json
+├── pred_actions.f32
+├── timings.csv
+└── traj_0.jpeg
+```
+
 - `eval.log`: complete evaluator log and metrics.
 - `traj_0.jpeg`: ground-truth actions, predicted actions, and inference points.
 - `run-info.txt`: revisions, checkpoint, dataset, and run parameters.
@@ -209,6 +280,10 @@ Open the synchronized artifacts directly from this repository:
 - [Evaluation log](../openloop-output-checkpoint2/eval.log)
 - [Run information](../openloop-output-checkpoint2/run-info.txt)
 - [GPU state after evaluation](../openloop-output-checkpoint2/gpu-after.txt)
+- [GGUF metrics](../gguf-openloop-output-checkpoint2/metrics.json)
+- [GGUF inference log](../gguf-openloop-output-checkpoint2/inference.log)
+- [GGUF timing samples](../gguf-openloop-output-checkpoint2/timings.csv)
+- [GGUF trajectory visualization](../gguf-openloop-output-checkpoint2/traj_0.jpeg)
 
 Extract the metrics with:
 

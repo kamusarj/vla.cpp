@@ -1,0 +1,50 @@
+{
+  "evaluator": "vla.cpp GGUF recorded-dataset open-loop evaluation",
+  "checkpoint_gguf": "/home/huy/vla.cpp/checkpoints/checkpoint2/checkpoint2-f32.gguf",
+  "checkpoint_processor": "/home/huy/vla.cpp/gr00t-openloop-work/runtime-checkpoint2-pruned",
+  "dataset": "/home/huy/vla.cpp/datasets/ur10e-cup-eval-v2",
+  "trajectory": 0,
+  "actual_steps": 814,
+  "execution_horizon": 16,
+  "request_count": 51,
+  "seed": 20260813,
+  "unnormalized_action_mse": 0.0009261190437848325,
+  "unnormalized_action_mae": 0.011353028116205142,
+  "per_dimension_mse": [
+    0.0003085293951915077,
+    0.0001627238763994711,
+    0.0004534057163512075,
+    0.0004399870291718093,
+    3.0024629969138984e-09,
+    0.0003205865637898925,
+    0.0047975977231269435
+  ],
+  "per_dimension_mae": [
+    0.013618996193360256,
+    0.010123399284573422,
+    0.016766324259425827,
+    0.015988919986105823,
+    4.055709106882819e-05,
+    0.013856535581083424,
+    0.00907646441781843
+  ],
+  "normalized_output_min": -4.6163177490234375,
+  "normalized_output_max": 4.73670768737793,
+  "normalized_output_mean": -0.01846589334309101,
+  "timing": {
+    "request_count": 51,
+    "mean_total_ms": 69.21017005882352,
+    "median_total_ms": 66.55835,
+    "min_total_ms": 66.433105,
+    "max_total_ms": 178.789185,
+    "mean_vision_ms": 38.64521772549019,
+    "median_vision_ms": 36.592091,
+    "min_vision_ms": 36.559944,
+    "max_vision_ms": 133.704941,
+    "mean_inference_ms": 28.819649058823533,
+    "median_inference_ms": 28.342169,
+    "min_inference_ms": 28.313105,
+    "max_inference_ms": 41.365299
+  },
+  "plot": "/home/huy/vla.cpp/gguf-openloop-checkpoint2/results/traj_0.jpeg"
+}
